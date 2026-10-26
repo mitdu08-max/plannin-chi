@@ -1,5 +1,3 @@
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 
 /// Palette et styles de l'application — identité « Nocturne néon ».

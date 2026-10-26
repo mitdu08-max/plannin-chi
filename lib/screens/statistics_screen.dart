@@ -4,6 +4,8 @@ import 'package:fl_chart/fl_chart.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/statistics_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_widgets.dart';
 
 class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
@@ -51,7 +53,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           ),
         ],
       ),
-      body: nightShiftsAsync.when(
+      body: AuroraBackground(
+        child: nightShiftsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _buildErrorState(error),
         data: (allShifts) => userConfigAsync.when(
@@ -113,6 +116,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               );
             },
           ),
+        ),
         ),
       ),
     );
@@ -206,17 +210,17 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
             title: 'Heures totales',
             value: '${totalHours.toStringAsFixed(1)}h',
             icon: Icons.access_time,
-            color: theme.colorScheme.primary,
+            color: AppColors.shiftEnd,
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: _buildSummaryCard(
             theme,
             title: 'Nuits travaillées',
             value: '$totalNights',
             icon: Icons.nightlight_round,
-            color: theme.colorScheme.tertiary,
+            color: AppColors.nightTertiary,
           ),
         ),
       ],
@@ -230,43 +234,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     required IconData icon,
     required Color color,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: color, size: 24),
-                ),
-                const Spacer(),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              value,
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return MetricCard(
+      value: value,
+      label: title,
+      icon: icon,
+      accent: color,
     );
   }
 
@@ -305,11 +277,12 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                   barTouchData: BarTouchData(
                     enabled: true,
                     touchTooltipData: BarTouchTooltipData(
-                      getTooltipColor: (group) => theme.colorScheme.primary,
+                      getTooltipColor: (group) => theme.colorScheme.surfaceContainerHighest,
+                      tooltipRoundedRadius: 10,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         return BarTooltipItem(
                           '${weekdays[group.x.toInt()]}: ${rod.toY.toInt()} nuit(s)',
-                          TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.bold),
+                          TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold),
                         );
                       },
                     ),
@@ -375,9 +348,20 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       barRods: [
                         BarChartRodData(
                           toY: count.toDouble(),
-                          color: isWeekend ? theme.colorScheme.error : theme.colorScheme.primary,
-                          width: 24,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: isWeekend
+                                ? [AppColors.shiftEnd, AppColors.shiftStart]
+                                : [
+                                    theme.colorScheme.primary,
+                                    theme.colorScheme.secondary,
+                                  ],
+                          ),
+                          width: 22,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(8),
+                          ),
                           backDrawRodData: BackgroundBarChartRodData(
                             show: true,
                             toY: maxCount.toDouble(),
@@ -427,7 +411,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     'Complets travaillés',
                     '${weekendAnalysis.fullWeekendsWorked}',
                     Icons.weekend,
-                    Colors.green,
+                    AppColors.success,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -437,7 +421,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     'Demi week-ends',
                     '${weekendAnalysis.halfWeekendsWorked}',
                     Icons.nights_stay,
-                    Colors.orange,
+                    AppColors.nightTertiary,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -717,7 +701,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+          Icon(Icons.error_outline, size: 56, color: AppColors.danger),
           const SizedBox(height: 16),
           Text('Erreur: $error'),
           const SizedBox(height: 16),

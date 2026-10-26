@@ -4,6 +4,9 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/notification_service.dart';
 import '../constants/app_constants.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_widgets.dart';
+import 'import_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -98,7 +101,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             content: Text(
               'Notifications refusées par le système : activez-les dans les réglages Android.',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: AppColors.warning,
             duration: Duration(seconds: 5),
           ),
         );
@@ -117,7 +120,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Paramètres enregistrés avec succès'), backgroundColor: Colors.green),
+        const SnackBar(content: Text('Paramètres enregistrés'), backgroundColor: AppColors.success),
       );
     }
   }
@@ -183,13 +186,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notification de test envoyée !'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Notification de test envoyée !'), backgroundColor: AppColors.success),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur notification: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Erreur notification: $e'), backgroundColor: AppColors.danger),
         );
       }
     }
@@ -214,37 +217,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: AuroraBackground(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.md,
+              120,
+            ),
             children: [
-              // Section Profil
-              _buildSectionHeader(theme, Icons.person, 'Profil'),
-              const SizedBox(height: 12),
+              Text('Personnalisez votre expérience',
+                  style: theme.textTheme.bodySmall),
+              const SizedBox(height: AppSpacing.lg),
+
               _buildProfileSection(theme),
+              const SizedBox(height: AppSpacing.lg),
 
-              const SizedBox(height: 24),
+              _buildSectionHeader(theme, Icons.palette_outlined, 'Apparence'),
+              const SizedBox(height: AppSpacing.sm),
+              _buildAppearanceSection(theme),
 
-              // Section Horaires de garde
-              _buildSectionHeader(theme, Icons.access_time, 'Horaires de garde'),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.lg),
+
+              _buildSectionHeader(theme, Icons.schedule_rounded, 'Horaires de garde'),
+              const SizedBox(height: AppSpacing.sm),
               _buildShiftHoursSection(theme),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.lg),
 
-              // Section Notifications
-              _buildSectionHeader(theme, Icons.notifications, 'Notifications & Rappels'),
-              const SizedBox(height: 12),
+              _buildSectionHeader(theme, Icons.notifications_none_rounded, 'Rappels'),
+              const SizedBox(height: AppSpacing.sm),
               _buildNotificationsSection(theme),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.lg),
 
-              // Section À propos
-              _buildSectionHeader(theme, Icons.info, 'À propos'),
-              const SizedBox(height: 12),
+              _buildSectionHeader(theme, Icons.import_contacts_rounded, 'Planning'),
+              const SizedBox(height: AppSpacing.sm),
+              _buildPlanningSection(theme),
+
+              const SizedBox(height: AppSpacing.lg),
+
+              _buildSectionHeader(theme, Icons.info_outline_rounded, 'À propos'),
+              const SizedBox(height: AppSpacing.sm),
               _buildAboutSection(theme),
             ],
           ),
@@ -256,13 +272,141 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildSectionHeader(ThemeData theme, IconData icon, String title) {
     return Row(
       children: [
-        Icon(icon, color: theme.colorScheme.primary, size: 24),
+        Icon(icon, color: theme.colorScheme.primary, size: 18),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
+        Text(title, style: theme.textTheme.titleSmall),
       ],
+    );
+  }
+
+  /// Choix du thème : nuit (par défaut), jour, ou réglage du système.
+  Widget _buildAppearanceSection(ThemeData theme) {
+    final mode = ref.watch(themeModeProvider);
+
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Le mode nuit réduit la luminosité pour les gardes.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              _themeChip(
+                theme,
+                label: 'Nuit',
+                icon: Icons.dark_mode_rounded,
+                selected: mode == ThemeMode.dark,
+                onTap: () {
+                  ref.read(themeModeProvider.notifier).state = ThemeMode.dark;
+                  _persistThemeMode(true);
+                },
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _themeChip(
+                theme,
+                label: 'Jour',
+                icon: Icons.light_mode_rounded,
+                selected: mode == ThemeMode.light,
+                onTap: () {
+                  ref.read(themeModeProvider.notifier).state = ThemeMode.light;
+                  _persistThemeMode(false);
+                },
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _themeChip(
+                theme,
+                label: 'Auto',
+                icon: Icons.brightness_auto_rounded,
+                selected: mode == ThemeMode.system,
+                onTap: () {
+                  ref.read(themeModeProvider.notifier).state = ThemeMode.system;
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _themeChip(
+    ThemeData theme, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final accent = theme.colorScheme.primary;
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: selected ? accent.withValues(alpha: 0.14) : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: selected ? accent : theme.colorScheme.outline,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 20, color: selected ? accent : theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: selected ? accent : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _persistThemeMode(bool dark) {
+    final db = ref.read(databaseServiceProvider);
+    final config = db.getUserConfig();
+    if (config == null) return;
+    db.saveUserConfig(config.copyWith(darkModeEnabled: dark));
+  }
+
+  Widget _buildPlanningSection(ThemeData theme) {
+    return SurfaceCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.upload_file_rounded),
+            title: const Text('Importer un planning'),
+            subtitle: const Text('PDF ou capture d\'écran'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ImportScreen()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.person_switch_outlined),
+            title: const Text('Changer de profil'),
+            subtitle: const Text('Choisir un autre agent de l\'équipe'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ImportScreen()),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -480,7 +624,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               Navigator.pop(context);
               await _resetAllData();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Tout supprimer'),
           ),
         ],
@@ -502,7 +646,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Application réinitialisée'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Application réinitialisée'), backgroundColor: AppColors.warning),
       );
       setState(() {
         _nameController.clear();

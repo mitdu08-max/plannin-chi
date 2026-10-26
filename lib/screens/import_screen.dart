@@ -11,6 +11,8 @@ import '../services/pdf_parser_service.dart';
 import '../services/ocr_parser_service.dart';
 import '../services/notification_service.dart';
 import '../constants/app_constants.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_widgets.dart';
 
 class ImportScreen extends ConsumerStatefulWidget {
   final bool isFirstLaunch;
@@ -34,10 +36,11 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Import Planning'),
+        title: const Text('Importer'),
         automaticallyImplyLeading: !widget.isFirstLaunch,
       ),
-      body: userConfigAsync.when(
+      body: AuroraBackground(
+        child: userConfigAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _buildErrorState(error),
         data: (userConfig) {
@@ -75,95 +78,104 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             ],
           );
         },
+        ),
       ),
     );
   }
 
   Widget _buildHeader(ThemeData theme, bool isConfigured, UserConfig? userConfig) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Icon(
-              Icons.nightlight_round,
-              size: 64,
-              color: theme.colorScheme.tertiary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              widget.isFirstLaunch
-                  ? 'Bienvenue dans Night Shift Planning'
-                  : 'Importer un planning',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.isFirstLaunch
-                  ? 'Configurez votre profil et importez votre premier planning d\'équipe pour commencer.'
-                  : 'Importez un planning d\'équipe au format PDF ou capture d\'écran pour extraire vos nuits de garde et identifier vos collègues.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (isConfigured && userConfig != null) ...[
-              const SizedBox(height: 16),
+    return SurfaceCard(
+      gradient: AppColors.aurora,
+      glow: true,
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: theme.colorScheme.primary,
-                      child: Text(
-                        userConfig.userTrigramme.isNotEmpty
-                            ? userConfig.userTrigramme.substring(0, 1).toUpperCase()
-                            : (userConfig.userName.isNotEmpty
-                                ? userConfig.userName.substring(0, 1).toUpperCase()
-                                : '?'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            userConfig.userName,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Trigramme: ${userConfig.userTrigramme}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onPrimaryContainer,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _showChangeUserDialog(),
-                      child: const Text('Changer'),
-                    ),
-                  ],
-                ),
+                child: const Icon(Icons.nightlight_round, size: 26, color: Colors.white),
               ),
+              const Spacer(),
+              if (isConfigured && userConfig != null)
+                TextButton(
+                  onPressed: _showChangeUserDialog,
+                  style: TextButton.styleFrom(foregroundColor: Colors.white),
+                  child: const Text('Changer'),
+                ),
             ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            widget.isFirstLaunch ? 'Bienvenue' : 'Importer un planning',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            widget.isFirstLaunch
+                ? 'Chargez le planning de votre équipe pour commencer : vos nuits, vos collègues et vos rappels seront créés automatiquement.'
+                : 'PDF officiel ou capture d\'écran du planning de l\'équipe.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.88),
+              fontSize: 13.5,
+              height: 1.4,
+            ),
+          ),
+          if (isConfigured && userConfig != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: Row(
+                children: [
+                  InitialsAvatar(
+                    name: userConfig.userTrigramme.isNotEmpty
+                        ? userConfig.userTrigramme
+                        : userConfig.userName,
+                    size: 36,
+                    color: Colors.white24,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          userConfig.userName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Profil actif : ${userConfig.userTrigramme}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -295,92 +307,77 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return Card(
-      child: InkWell(
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: SurfaceCard(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  size: 32,
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    theme.colorScheme.primary.withValues(alpha: 0.18),
+                    theme.colorScheme.secondary.withValues(alpha: 0.12),
                   ],
                 ),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
+              child: Icon(icon, size: 23, color: theme.colorScheme.primary),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: theme.textTheme.bodySmall),
+                ],
               ),
-            ],
-          ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 14,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildInfoCard(ThemeData theme) {
-    return Card(
-      color: theme.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Format attendu',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '• Une colonne par jour du mois, une ligne par agent\n'
-              '• Codes lus : N = nuit travaillée, RH/R = repos,\n'
-              '   CA/CET/CFR = congés, F/F EXT = formation\n'
-              '• Le mois est lu dans le document (sinon il vous est demandé)',
-              style: TextStyle(fontSize: 13),
-            ),
-          ],
-        ),
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline_rounded,
+                  size: 18, color: theme.colorScheme.secondary),
+              const SizedBox(width: 8),
+              Text('Format attendu', style: theme.textTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '• Une colonne par jour du mois, une ligne par agent\n'
+            '• Codes lus : N = nuit travaillée, RH/R = repos,\n'
+            '   CA/CET/CFR = congés, F/F EXT = formation\n'
+            '• Le mois est lu dans le document (sinon il vous est demandé)',
+            style: theme.textTheme.bodySmall?.copyWith(height: 1.6),
+          ),
+        ],
       ),
     );
   }
@@ -390,7 +387,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+          Icon(Icons.error_outline, size: 56, color: AppColors.danger),
           const SizedBox(height: 16),
           Text('Erreur: $error'),
           const SizedBox(height: 16),
@@ -806,9 +803,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.15),
+                    color: AppColors.warning.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.withValues(alpha: 0.6)),
+                    border: Border.all(color: AppColors.warning.withValues(alpha: 0.6)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -816,14 +813,14 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                       Row(
                         children: [
                           const Icon(Icons.warning_amber_rounded,
-                              color: Colors.orange, size: 20),
+                              color: AppColors.warning, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'Vérifiez ces lignes avant de valider',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.orange,
+                                color: AppColors.warning,
                               ),
                             ),
                           ),
@@ -863,14 +860,14 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                       final code = row['code'] as String;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
-                        color: Colors.orange.withValues(alpha: 0.12),
+                        color: AppColors.warning.withValues(alpha: 0.12),
                         shape: RoundedRectangleBorder(
-                          side: BorderSide(color: Colors.orange.withValues(alpha: 0.6)),
+                          side: BorderSide(color: AppColors.warning.withValues(alpha: 0.6)),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: Colors.orange.shade800,
+                            backgroundColor: AppColors.warning,
                             child: Text(
                               '${date.day}',
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -879,12 +876,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                           title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: const Text(
                             '🏖️ Jour de congé',
-                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
+                            style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600),
                           ),
                           trailing: Text(
                             code,
                             style: const TextStyle(
-                              color: Colors.orange,
+                              color: AppColors.warning,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -897,7 +894,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: Colors.red.shade700,
+                          backgroundColor: AppColors.shiftEnd,
                           child: Text(
                             '${item.date.day}',
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -912,7 +909,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                               ),
                         trailing: Icon(
                           item.coWorkers.isEmpty ? Icons.person_outline : Icons.people_outline,
-                          color: item.coWorkers.isEmpty ? Colors.orange : Colors.green,
+                          color: item.coWorkers.isEmpty ? AppColors.warning : AppColors.success,
                         ),
                       ),
                     );
@@ -1045,7 +1042,13 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       ref.invalidate(teamMembersProvider);
       ref.invalidate(allNightShiftsProvider);
       ref.invalidate(userConfigProvider);
-      ref.read(selectedTabProvider.notifier).state = 0;
+      // Écran poussé depuis le tableau de bord : on revient en arrière.
+      // Premier lancement (écran racine) : on renvoie vers l'accueil.
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        ref.read(selectedTabProvider.notifier).state = 0;
+      }
 
       setProcessing(false, '');
 
@@ -1078,7 +1081,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: AppColors.danger,
         duration: const Duration(seconds: 4),
       ),
     );
@@ -1088,7 +1091,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: AppColors.success,
         duration: const Duration(seconds: 3),
       ),
     );

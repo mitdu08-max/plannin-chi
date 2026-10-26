@@ -7,6 +7,9 @@ import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/notification_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_widgets.dart';
+import 'import_screen.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -45,7 +48,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ),
         ],
       ),
-      body: nightShiftsAsync.when(
+      body: AuroraBackground(
+        child: nightShiftsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _buildErrorState(error),
         data: (allShifts) => userConfigAsync.when(
@@ -92,18 +96,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
               return Column(
                 children: [
-                  // Calendar
                   _buildCalendar(theme, shiftsMap, teamMembers),
-
-                  const SizedBox(height: 16),
-
-                  // Selected day details
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: const StatusLegend(),
+                  ),
+                  const SizedBox(height: 12),
                   _buildDayDetails(theme, shiftsMap, userConfig, teamMembers),
                 ],
               );
             },
           ),
         ),
+      ),
       ),
     );
   }
@@ -219,77 +224,89 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }
 
   Widget _buildWorkedDayCell(ThemeData theme, DateTime day) {
-    return Container(
-      margin: const EdgeInsets.all(3.5),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.red.shade700,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '${day.day}',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 15,
-        ),
-      ),
+    return _dayCell(
+      day: day,
+      gradient: AppColors.shiftGradient,
+      textColor: Colors.white,
     );
   }
 
   Widget _buildVacationDayCell(ThemeData theme, DateTime day) {
-    return Container(
-      margin: const EdgeInsets.all(3.5),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.green.shade700,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '${day.day}',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 15,
-        ),
-      ),
+    return _dayCell(
+      day: day,
+      gradient: AppColors.vacationGradient,
+      textColor: Colors.white,
     );
   }
 
-  Widget _buildTodayCell(ThemeData theme, DateTime day, bool isWorking, bool isVacation) {
+  Widget _buildTodayCell(
+    ThemeData theme,
+    DateTime day,
+    bool isWorking,
+    bool isVacation,
+  ) {
+    final hasStatus = isWorking || isVacation;
+    return _dayCell(
+      day: day,
+      gradient: isWorking
+          ? AppColors.shiftGradient
+          : (isVacation ? AppColors.vacationGradient : null),
+      background: hasStatus
+          ? null
+          : theme.colorScheme.primary.withValues(alpha: 0.12),
+      textColor: hasStatus ? Colors.white : theme.colorScheme.primary,
+      border: Border.all(color: theme.colorScheme.primary, width: 1.6),
+    );
+  }
+
+  Widget _buildSelectedCell(
+    ThemeData theme,
+    DateTime day,
+    bool isWorking,
+    bool isVacation,
+  ) {
+    return _dayCell(
+      day: day,
+      gradient: isWorking
+          ? AppColors.shiftGradient
+          : (isVacation ? AppColors.vacationGradient : AppColors.aurora),
+      textColor: Colors.white,
+      glow: true,
+    );
+  }
+
+  /// Cellule de calendrier commune (nuit / congé / aujourd'hui / sélection).
+  Widget _dayCell({
+    required DateTime day,
+    Gradient? gradient,
+    Color? background,
+    required Color textColor,
+    BoxBorder? border,
+    bool glow = false,
+  }) {
     return Container(
       margin: const EdgeInsets.all(3.5),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: isWorking ? Colors.red.shade700 : (isVacation ? Colors.green.shade700 : null),
-        border: Border.all(color: Colors.blueAccent, width: 2),
-        borderRadius: BorderRadius.circular(8),
+        gradient: gradient,
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: border,
+        boxShadow: glow && gradient != null
+            ? [
+                BoxShadow(
+                  color: gradient.colors.first.withValues(alpha: 0.45),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
       ),
       child: Text(
         '${day.day}',
         style: TextStyle(
-          color: (isWorking || isVacation) ? Colors.white : Colors.blueAccent,
-          fontWeight: FontWeight.bold,
-          fontSize: 15,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectedCell(ThemeData theme, DateTime day, bool isWorking, bool isVacation) {
-    return Container(
-      margin: const EdgeInsets.all(3.5),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isWorking ? Colors.red.shade900 : (isVacation ? Colors.green.shade900 : theme.colorScheme.primary),
-        border: Border.all(color: Colors.white, width: 2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '${day.day}',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
+          color: textColor,
+          fontWeight: FontWeight.w700,
           fontSize: 15,
         ),
       ),
@@ -318,14 +335,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final bool isVacation = shift != null && shift.isVacation;
     final String vacationType = isVacation ? shift.vacationType : '';
 
-    // Glassmorphism accent colors
     final Color accentColor = isWorking
-        ? Colors.red.shade600
-        : (isVacation ? Colors.green.shade600 : Colors.teal.shade500);
+        ? AppColors.shiftEnd
+        : (isVacation ? AppColors.vacationStart : theme.colorScheme.onSurfaceVariant);
 
     final String badgeText = isWorking
-        ? '🌙 Nuit de garde'
-        : (isVacation ? '🏖️ Vacances ($vacationType)' : '🌴 Repos');
+        ? 'Nuit de garde'
+        : (isVacation ? 'Congés ($vacationType)' : 'Repos');
 
     return Expanded(
       child: Padding(
@@ -416,10 +432,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: isDark ? 0.12 : 0.08),
+                          color: AppColors.vacationStart.withValues(alpha: isDark ? 0.12 : 0.08),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Colors.green.withValues(alpha: 0.35),
+                            color: AppColors.vacationStart.withValues(alpha: 0.35),
                             width: 1,
                           ),
                         ),
@@ -431,10 +447,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.withValues(alpha: 0.2),
+                                    color: AppColors.vacationStart.withValues(alpha: 0.2),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.beach_access, color: Colors.green, size: 20),
+                                  child: const Icon(Icons.beach_access, color: AppColors.vacationStart, size: 20),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -443,7 +459,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 15,
-                                      color: Colors.green,
+                                      color: AppColors.vacationStart,
                                     ),
                                   ),
                                 ),
@@ -465,10 +481,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: isDark ? 0.12 : 0.08),
+                          color: AppColors.shiftEnd.withValues(alpha: isDark ? 0.14 : 0.08),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Colors.red.withValues(alpha: 0.3),
+                            color: AppColors.shiftEnd.withValues(alpha: 0.35),
                             width: 1,
                           ),
                         ),
@@ -477,10 +493,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Colors.red.withValues(alpha: 0.2),
+                                color: AppColors.shiftEnd.withValues(alpha: 0.22),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.nightlight_round, color: Colors.red, size: 18),
+                              child: const Icon(Icons.nightlight_round, color: AppColors.shiftEnd, size: 18),
                             ),
                             const SizedBox(width: 12),
                             Text(
@@ -538,15 +554,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: isDark ? 0.12 : 0.08),
+                            color: AppColors.warning.withValues(alpha: isDark ? 0.14 : 0.08),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: Colors.orange.withValues(alpha: 0.3),
+                              color: AppColors.warning.withValues(alpha: 0.35),
                             ),
                           ),
                           child: const Row(
                             children: [
-                              Icon(Icons.person_outline, color: Colors.orange, size: 20),
+                              Icon(Icons.person_outline, color: AppColors.warning, size: 20),
                               SizedBox(width: 10),
                               Text(
                                 'Seul de garde cette nuit',
@@ -576,10 +592,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
-                          color: Colors.teal.withValues(alpha: isDark ? 0.10 : 0.06),
+                          color: AppColors.vacationStart.withValues(alpha: isDark ? 0.12 : 0.07),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Colors.teal.withValues(alpha: 0.3),
+                            color: AppColors.vacationStart.withValues(alpha: 0.35),
                             width: 1,
                           ),
                         ),
@@ -588,10 +604,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: Colors.teal.withValues(alpha: 0.2),
+                                color: AppColors.vacationStart.withValues(alpha: 0.22),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.beach_access, size: 24, color: Colors.teal),
+                              child: const Icon(Icons.beach_access, size: 24, color: AppColors.vacationStart),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -730,7 +746,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         children: [
           CircleAvatar(
             radius: 12,
-            backgroundColor: Colors.red.shade700,
+            backgroundColor: AppColors.shiftEnd,
             child: Text(
               colleague.trigramme.isNotEmpty
                   ? colleague.trigramme.substring(0, 1).toUpperCase()
@@ -791,7 +807,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+          Icon(Icons.error_outline, size: 56, color: AppColors.danger),
           const SizedBox(height: 16),
           Text('Erreur: $error'),
           const SizedBox(height: 16),
@@ -815,9 +831,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           const SizedBox(height: 8),
           const Text('Configurez votre profil dans l\'onglet Import'),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () => ref.read(selectedTabProvider.notifier).state = 0,
-            child: const Text('Aller à l\'import'),
+          GradientButton(
+            label: 'Importer un planning',
+            icon: Icons.upload_file_rounded,
+            expand: false,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ImportScreen()),
+            ),
           ),
         ],
       ),
@@ -1027,7 +1047,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isWorking ? 'Garde enregistrée' : 'Absence enregistrée'),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.success,
         ),
       );
     }
@@ -1049,7 +1069,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               Navigator.pop(context);
               _deleteShift(shift);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Supprimer'),
           ),
         ],

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
@@ -59,6 +60,10 @@ final userConfigProvider = FutureProvider<UserConfig?>((ref) async {
   return db.getUserConfig();
 });
 
-// Onglet actif de la barre de navigation (0 = Import, 1 = Calendrier, ...)
+// Mode d'affichage choisi par l'utilisateur dans les paramètres.
+// `null` = suit le réglage enregistré (UserConfig.darkModeEnabled).
+final themeModeProvider = StateProvider<ThemeMode?>((ref) => null);
+
+// Onglet actif de la barre de navigation (0 = Accueil, 1 = Calendrier, ...)
 // Permet aux écrans de renvoyer l'utilisateur vers l'import sans callback.
 final selectedTabProvider = StateProvider<int>((ref) => 0);

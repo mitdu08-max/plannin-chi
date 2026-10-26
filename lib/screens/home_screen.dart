@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/providers.dart';
-import 'import_screen.dart';
+import '../theme/app_theme.dart';
 import 'calendar_screen.dart';
-import 'statistics_screen.dart';
+import 'dashboard_screen.dart';
+import 'import_screen.dart';
 import 'settings_screen.dart';
+import 'statistics_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -14,40 +17,40 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  static final List<Widget> _screens = [
-    const ImportScreen(),
-    const CalendarScreen(),
-    const StatisticsScreen(),
-    const SettingsScreen(),
+  static const List<Widget> _screens = [
+    DashboardScreen(),
+    CalendarScreen(),
+    StatisticsScreen(),
+    SettingsScreen(),
   ];
 
   static const List<NavigationDestination> _destinations = [
     NavigationDestination(
-      icon: Icon(Icons.upload_file_outlined),
-      selectedIcon: Icon(Icons.upload_file),
-      label: 'Import',
+      icon: Icon(Icons.space_dashboard_outlined),
+      selectedIcon: Icon(Icons.space_dashboard_rounded),
+      label: 'Accueil',
     ),
     NavigationDestination(
       icon: Icon(Icons.calendar_month_outlined),
-      selectedIcon: Icon(Icons.calendar_month),
+      selectedIcon: Icon(Icons.calendar_month_rounded),
       label: 'Calendrier',
     ),
     NavigationDestination(
-      icon: Icon(Icons.bar_chart_outlined),
-      selectedIcon: Icon(Icons.bar_chart),
-      label: 'Statistiques',
+      icon: Icon(Icons.insights_outlined),
+      selectedIcon: Icon(Icons.insights_rounded),
+      label: 'Stats',
     ),
     NavigationDestination(
-      icon: Icon(Icons.settings_outlined),
-      selectedIcon: Icon(Icons.settings),
-      label: 'Paramètres',
+      icon: Icon(Icons.tune_outlined),
+      selectedIcon: Icon(Icons.tune_rounded),
+      label: 'Réglages',
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
     final userConfigAsync = ref.watch(userConfigProvider);
-    final selectedIndex = ref.watch(selectedTabProvider);
+    final index = ref.watch(selectedTabProvider);
 
     return userConfigAsync.when(
       loading: () => const Scaffold(
@@ -55,36 +58,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       error: (error, stack) => Scaffold(
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text('Erreur: $error'),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(userConfigProvider),
-                child: const Text('Réessayer'),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline,
+                    size: 56, color: Theme.of(context).colorScheme.error),
+                const SizedBox(height: AppSpacing.md),
+                Text('Erreur : $error', textAlign: TextAlign.center),
+                const SizedBox(height: AppSpacing.md),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(userConfigProvider),
+                  child: const Text('Réessayer'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
       data: (userConfig) {
-        final isFirstLaunch = userConfig == null;
-
-        if (isFirstLaunch) {
+        // Premier lancement : configuration obligatoire avant tout.
+        if (userConfig == null) {
           return const ImportScreen(isFirstLaunch: true);
         }
 
+        final safeIndex = index.clamp(0, _screens.length - 1);
+
         return Scaffold(
-          body: _screens[selectedIndex.clamp(0, _screens.length - 1)],
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: selectedIndex.clamp(0, _screens.length - 1),
-            onDestinationSelected: (index) {
-              ref.read(selectedTabProvider.notifier).state = index;
-            },
-            destinations: _destinations,
+          extendBody: true,
+          body: IndexedStack(index: safeIndex, children: _screens),
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: Theme.of(context).colorScheme.outline),
+              ),
+            ),
+            child: NavigationBar(
+              selectedIndex: safeIndex,
+              onDestinationSelected: (value) =>
+                  ref.read(selectedTabProvider.notifier).state = value,
+              destinations: _destinations,
+            ),
           ),
         );
       },

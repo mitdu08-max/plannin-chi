@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/notification_service.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -691,6 +692,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         return 'Compte Épargne Temps (CET)';
       case 'CFR':
         return 'Congés Fractionnés (CFR)';
+      case 'REPOS':
+        return 'Jour de repos';
       default:
         return 'Vacances ($vacationType)';
     }
@@ -813,9 +816,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           const Text('Configurez votre profil dans l\'onglet Import'),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {
-              // Navigate to import tab - would need tab controller
-            },
+            onPressed: () => ref.read(selectedTabProvider.notifier).state = 0,
             child: const Text('Aller à l\'import'),
           ),
         ],
@@ -830,16 +831,206 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     });
   }
 
-  void _showAddShiftDialog(DateTime date) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ajout de garde - À implémenter')),
-    );
-  }
+  void _showAddShiftDialog(DateTime date) => _showShiftEditor(date: date);
 
-  void _showEditShiftDialog(NightShift shift) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Modification de garde - À implémenter')),
+  void _showEditShiftDialog(NightShift shift) =>
+      _showShiftEditor(date: shift.date, shift: shift);
+
+  /// Création / modification manuelle d'une garde.
+  ///
+  /// La garde est marquée `isManualOverride: true` et n'est jamais écrasée
+  /// silencieusement : un ré-import du même mois reste possible mais l'aperçu
+  /// affiche le même identifiant, donc la saisie manuelle est bien la dernière
+  /// opération enregistrée.
+  Future<void> _showShiftEditor({
+    required DateTime date,
+    NightShift? shift,
+  }) async {
+    final db = ref.read(databaseServiceProvider);
+    final config = db.getUserConfig();
+
+    if (config == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configurez d\'abord votre profil')),
+      );
+      return;
+    }
+
+    final teamMembers = db.getAllTeamMembers();
+    final day = DateTime(date.year, date.month, date.day);
+
+    var startTime = shift?.startTime ?? config.shiftStartTime;
+    var endTime = shift?.endTime ?? config.shiftEndTime;
+    var isWorking = shift?.isWorking ?? true;
+    var vacationType = 'CA';
+    if (shift != null && shift.isVacation && shift.vacationType.isNotEmpty) {
+      vacationType = shift.vacationType;
+    }
+    final coWorkers = <String>{...?shift?.coWorkerIds};
+
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          Future<void> pickTime(bool isStart) async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: isStart ? startTime : endTime,
+            );
+            if (picked != null) {
+              setLocalState(() {
+                if (isStart) {
+                  startTime = picked;
+                } else {
+                  endTime = picked;
+                }
+              });
+            }
+          }
+
+          String format(TimeOfDay t) =>
+              '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+          return AlertDialog(
+            title: Text(
+              '${shift == null ? 'Ajouter' : 'Modifier'} - '
+              '${DateFormat('EEEE d MMMM', 'fr_FR').format(day)}',
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Je travaille cette nuit'),
+                      value: isWorking,
+                      onChanged: (value) =>
+                          setLocalState(() => isWorking = value),
+                    ),
+                    if (isWorking) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.login, size: 18),
+                              label: Text(format(startTime)),
+                              onPressed: () => pickTime(true),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.logout, size: 18),
+                              label: Text(format(endTime)),
+                              onPressed: () => pickTime(false),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Collègues en poste',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: teamMembers
+                            .where((m) => m.trigramme != config.userTrigramme)
+                            .map(
+                              (member) => FilterChip(
+                                label: Text(member.trigramme),
+                                selected: coWorkers.contains(member.id),
+                                onSelected: (selected) {
+                                  setLocalState(() {
+                                    if (selected) {
+                                      coWorkers.add(member.id);
+                                    } else {
+                                      coWorkers.remove(member.id);
+                                    }
+                                  });
+                                },
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: vacationType,
+                        decoration:
+                            const InputDecoration(labelText: 'Type d\'absence'),
+                        items: const [
+                          DropdownMenuItem(value: 'CA', child: Text('Congés annuels')),
+                          DropdownMenuItem(value: 'CET', child: Text('Compte épargne temps')),
+                          DropdownMenuItem(value: 'CFR', child: Text('Congés fractionnés')),
+                          DropdownMenuItem(value: 'REPOS', child: Text('Repos')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setLocalState(() => vacationType = value);
+                          }
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Enregistrer'),
+              ),
+            ],
+          );
+        },
+      ),
     );
+
+    if (shouldSave != true) return;
+
+    final updated = NightShift(
+      id: '${config.userId}_${day.year}_${day.month}_${day.day}',
+      date: day,
+      agentId: config.userId,
+      agentTrigramme: config.userTrigramme,
+      startTime: startTime,
+      endTime: endTime,
+      isWorking: isWorking,
+      coWorkerIds: isWorking ? coWorkers.toList() : const [],
+      isManualOverride: true,
+      isVacation: !isWorking,
+      vacationType: isWorking ? '' : vacationType,
+    );
+
+    await db.saveNightShift(updated);
+    ref.invalidate(allNightShiftsProvider);
+
+    if (config.notificationsEnabled) {
+      await NotificationService().rescheduleAllNotifications(
+        userId: config.userId,
+        shiftStartTime: config.shiftStartTime,
+        notificationDelayMinutes: config.notificationDelayMinutes,
+      );
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isWorking ? 'Garde enregistrée' : 'Absence enregistrée'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   void _confirmDeleteShift(NightShift shift) {
@@ -869,6 +1060,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Future<void> _deleteShift(NightShift shift) async {
     final db = ref.read(databaseServiceProvider);
     await db.deleteNightShift(shift.id);
+    await NotificationService().cancelShiftNotification(shift.id);
     ref.invalidate(allNightShiftsProvider);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

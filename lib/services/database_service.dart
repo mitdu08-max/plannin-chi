@@ -75,10 +75,21 @@ class DatabaseService {
     await _teamMembersBox.put(member.id, member);
   }
 
+  /// Enregistre l'équipe détectée **sans vider** la boîte.
+  ///
+  /// L'ancienne version faisait un `clear()` : un simple ré-import effaçait
+  /// les noms/prénoms saisis ou corrigés par l'utilisateur. On fait désormais
+  /// un upsert, l'ordre étant conservé par `orderIndex`.
   Future<void> saveAllTeamMembers(List<TeamMember> members) async {
-    await _teamMembersBox.clear();
     for (var i = 0; i < members.length; i++) {
-      final member = members[i].copyWith(orderIndex: i);
+      final existing = getTeamMemberById(members[i].id);
+      final member = members[i].copyWith(
+        orderIndex: members[i].orderIndex == 0 ? i : members[i].orderIndex,
+        // on ne perd pas un nom/prénom déjà renseigné
+        firstName: members[i].firstName.isEmpty
+            ? (existing?.firstName ?? '')
+            : members[i].firstName,
+      );
       await _teamMembersBox.put(member.id, member);
     }
   }
@@ -152,6 +163,39 @@ class DatabaseService {
 
   Future<void> clearNightShifts() async {
     await _nightShiftsBox.clear();
+  }
+
+  /// Supprime toutes les gardes d'un agent pour un mois donné.
+  ///
+  /// Utilisé avant chaque import : sans cela, une garde retirée du nouveau
+  /// planning restait en base et faussait les statistiques.
+  Future<int> deleteNightShiftsForMonth(
+    String agentId,
+    int year,
+    int month,
+  ) async {
+    final keys = _nightShiftsBox.values
+        .where((shift) =>
+            shift.agentId == agentId &&
+            shift.date.year == year &&
+            shift.date.month == month)
+        .map((shift) => shift.key as String)
+        .toList();
+
+    for (final key in keys) {
+      await _nightShiftsBox.delete(key);
+    }
+    return keys.length;
+  }
+
+  /// Nombre de gardes enregistrées pour un agent sur un mois.
+  int countNightShiftsForMonth(String agentId, int year, int month) {
+    return _nightShiftsBox.values
+        .where((shift) =>
+            shift.agentId == agentId &&
+            shift.date.year == year &&
+            shift.date.month == month)
+        .length;
   }
 
   // User Config

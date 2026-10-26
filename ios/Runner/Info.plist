@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>La caméra sert à photographier le planning de l'équipe pour l'importer.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>La galerie sert à importer une capture d'écran du planning de l'équipe.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

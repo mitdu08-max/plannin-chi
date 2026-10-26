@@ -64,10 +64,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final db = ref.read(databaseServiceProvider);
     final userConfig = db.getUserConfig();
 
-    final updatedConfig = UserConfig(
-      userId: userConfig?.userId ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-      userName: _nameController.text.trim(),
-      userTrigramme: _trigrammeController.text.trim().toUpperCase(),
+    final trigramme = _trigrammeController.text.trim().toUpperCase();
+    final name = _nameController.text.trim();
+
+    // L'identifiant doit rester l'agent (trigramme/nom) : c'est la clé des
+    // gardes (agentId). Un `user_<timestamp>` rendait les statistiques vides.
+    final baseConfig = userConfig ??
+        UserConfig(userId: trigramme, userName: name, userTrigramme: trigramme);
+
+    final keepUserId = (userConfig?.userId ?? '').isNotEmpty;
+    final updatedConfig = baseConfig.copyWith(
+      // On conserve l'identifiant historique s'il existe : c'est lui qui lie
+      // les gardes déjà importées (agentId).
+      userId: keepUserId ? userConfig!.userId : trigramme,
+      userName: name,
+      userTrigramme: trigramme,
       shiftDurationHours: _shiftDurationHours,
       notificationDelayMinutes: _notificationDelayMinutes,
       shiftStartTime: _shiftStartTime,
@@ -80,7 +91,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Reschedule notifications if enabled
     if (_notificationsEnabled) {
       final notificationService = NotificationService();
-      await notificationService.initialize();
+      final granted = await notificationService.requestPermissions();
+      if (!granted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Notifications refusées par le système : activez-les dans les réglages Android.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
       await notificationService.rescheduleAllNotifications(
         userId: updatedConfig.userId,
         shiftStartTime: _shiftStartTime,
@@ -268,19 +290,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             TextFormField(
               controller: _trigrammeController,
               decoration: const InputDecoration(
-                labelText: 'Trigramme',
-                hintText: 'JDU',
+                labelText: 'Trigramme / nom sur le planning',
+                hintText: 'JDU ou RINAUDO',
                 prefixIcon: Icon(Icons.badge_outlined),
                 counterText: '',
+                helperText: 'Trigramme ou nom utilisé dans le planning',
               ),
-              maxLength: 3,
+              maxLength: 12,
               textCapitalization: TextCapitalization.characters,
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Veuillez entrer votre trigramme';
                 }
-                if (value.trim().length != 3) {
-                  return 'Le trigramme doit contenir 3 caractères';
+                if (value.trim().length < 2) {
+                  return 'Saisissez au moins 2 caractères';
                 }
                 return null;
               },
@@ -475,6 +498,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.invalidate(userConfigProvider);
     ref.invalidate(teamMembersProvider);
     ref.invalidate(allNightShiftsProvider);
+    ref.read(selectedTabProvider.notifier).state = 0;
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

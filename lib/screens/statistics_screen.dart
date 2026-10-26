@@ -66,7 +66,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               }
 
               final userShifts = allShifts
-                  .where((s) => s.agentId == userConfig.userId && s.isWorking)
+                  .where((s) =>
+                      (s.agentId == userConfig.userId ||
+                       s.agentTrigramme.toUpperCase() ==
+                           userConfig.userTrigramme.toUpperCase()) &&
+                      s.isWorking)
                   .toList();
 
               return RefreshIndicator(

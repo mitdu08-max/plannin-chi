@@ -2,6 +2,17 @@ import '../models/models.dart';
 
 /// Service for calculating statistics from night shifts
 class StatisticsService {
+  /// Heures d'une garde : durée réelle (fin - début, minuit géré) avec repli
+  /// sur la durée forfaitaire configurée si la saisie est incomplète.
+  static double _shiftHours(NightShift shift, double fallbackHours) {
+    final real = shift.durationHours;
+    return real > 0 ? real : fallbackHours;
+  }
+
+  /// Normalise une date (supprime l'heure) pour les comparaisons de jours.
+  static DateTime _dayOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
   /// Calculate total hours worked in a specific month
   static double calculateMonthlyHours(
     List<NightShift> shifts,
@@ -15,7 +26,10 @@ class StatisticsService {
       s.isWorking
     ).toList();
 
-    return monthlyShifts.length * shiftDurationHours;
+    return monthlyShifts.fold<double>(
+      0.0,
+      (total, shift) => total + _shiftHours(shift, shiftDurationHours),
+    );
   }
 
   /// Calculate total hours worked in a specific year
@@ -29,7 +43,10 @@ class StatisticsService {
       s.isWorking
     ).toList();
 
-    return yearlyShifts.length * shiftDurationHours;
+    return yearlyShifts.fold<double>(
+      0.0,
+      (total, shift) => total + _shiftHours(shift, shiftDurationHours),
+    );
   }
 
   /// Count nights worked per day of week for a month
@@ -77,37 +94,41 @@ class StatisticsService {
     return counts;
   }
 
-  /// Analyze weekends for a month
+  /// Analyse des week-ends dont le **samedi** tombe dans le mois.
+  ///
+  /// Correction : le dimanche est cherché par date réelle et non par
+  /// `day + 1`. Un samedi 31 octobre est désormais correctement associé au
+  /// dimanche 1er novembre (et n'est plus classé « demi week-end »).
   static WeekendAnalysis analyzeWeekendsMonth(
     List<NightShift> shifts,
     int year,
     int month,
   ) {
-    final workingDays = shifts
-        .where((s) => s.date.year == year && s.date.month == month && s.isWorking)
-        .map((s) => s.date.day)
+    final workedDays = shifts
+        .where((s) => s.isWorking)
+        .map((s) => _dayOnly(s.date))
         .toSet();
 
-    int fullWeekendsWorked = 0;
-    int halfWeekendsWorked = 0;
-    int fullWeekendsRest = 0;
+    var fullWeekendsWorked = 0;
+    var halfWeekendsWorked = 0;
+    var fullWeekendsRest = 0;
 
-    // Find all Saturdays in the month
-    final lastDay = DateTime(year, month + 1, 0);
+    final lastDayOfMonth = DateTime(year, month + 1, 0).day;
 
-    for (int day = 1; day <= lastDay.day; day++) {
-      final date = DateTime(year, month, day);
-      if (date.weekday == DateTime.saturday) {
-        final saturdayWorked = workingDays.contains(day);
-        final sundayWorked = workingDays.contains(day + 1);
+    for (var day = 1; day <= lastDayOfMonth; day++) {
+      final saturday = DateTime(year, month, day);
+      if (saturday.weekday != DateTime.saturday) continue;
 
-        if (saturdayWorked && sundayWorked) {
-          fullWeekendsWorked++;
-        } else if (saturdayWorked || sundayWorked) {
-          halfWeekendsWorked++;
-        } else {
-          fullWeekendsRest++;
-        }
+      final sunday = saturday.add(const Duration(days: 1));
+      final saturdayWorked = workedDays.contains(saturday);
+      final sundayWorked = workedDays.contains(_dayOnly(sunday));
+
+      if (saturdayWorked && sundayWorked) {
+        fullWeekendsWorked++;
+      } else if (saturdayWorked || sundayWorked) {
+        halfWeekendsWorked++;
+      } else {
+        fullWeekendsRest++;
       }
     }
 
@@ -150,8 +171,13 @@ class StatisticsService {
   ) {
     final Map<String, int> coworkerCounts = {};
 
+    // On ne compte que les gardes de l'utilisateur courant : les shifts d'un
+    // autre agent ne doivent pas gonfler les statistiques de binômes.
+    final hasUserShifts = shifts.any((s) => s.agentId == currentUserId);
+
     for (final shift in shifts) {
       if (!shift.isWorking) continue;
+      if (hasUserShifts && shift.agentId != currentUserId) continue;
 
       for (final coworkerId in shift.coWorkerIds) {
         coworkerCounts[coworkerId] = (coworkerCounts[coworkerId] ?? 0) + 1;

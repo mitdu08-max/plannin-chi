@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:intl/date_symbol_data_local.dart';
-import 'models/models.dart';
 import 'providers/providers.dart';
 import 'constants/app_constants.dart';
 import 'screens/home_screen.dart';
@@ -17,22 +15,8 @@ void main() async {
   // Initialize timezone database for notifications
   tz.initializeTimeZones();
 
-  // Initialize Hive
-  await Hive.initFlutter();
-
-  // Register Hive adapters
-  if (!Hive.isAdapterRegistered(0)) {
-    Hive.registerAdapter(TeamMemberAdapter());
-  }
-  if (!Hive.isAdapterRegistered(1)) {
-    Hive.registerAdapter(NightShiftAdapter());
-  }
-  if (!Hive.isAdapterRegistered(2)) {
-    Hive.registerAdapter(UserConfigAdapter());
-  }
-  if (!Hive.isAdapterRegistered(100)) {
-    Hive.registerAdapter(TimeOfDayAdapter());
-  }
+  // Hive est initialisé (et les adapters enregistrés) par DatabaseService,
+  // via databaseInitializedProvider : plus de double initialisation ici.
 
   runApp(const ProviderScope(child: NightShiftApp()));
 }

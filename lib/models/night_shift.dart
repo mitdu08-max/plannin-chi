@@ -52,13 +52,40 @@ class NightShift extends HiveObject {
     this.vacationType = '',
   });
 
-  Duration get duration {
+  /// Vrai si la garde franchit minuit (ex: 19h00 -> 07h00).
+  bool get isOvernight {
     final startMinutes = startTime.hour * 60 + startTime.minute;
     final endMinutes = endTime.hour * 60 + endTime.minute;
+    return endMinutes < startMinutes;
+  }
+
+  /// Durée réelle de la garde.
+  ///
+  /// Correction : une garde de nuit (19h00 -> 07h00) traversait minuit et
+  /// renvoyait une durée négative (-12h). On ajoute 24h quand l'heure de fin
+  /// est antérieure à l'heure de début. Si les deux heures sont identiques,
+  /// la durée est nulle (saisie incomplète).
+  Duration get duration {
+    final startMinutes = startTime.hour * 60 + startTime.minute;
+    var endMinutes = endTime.hour * 60 + endTime.minute;
+    if (endMinutes == startMinutes) return Duration.zero;
+    if (endMinutes < startMinutes) endMinutes += 24 * 60;
     return Duration(minutes: endMinutes - startMinutes);
   }
 
   double get durationHours => duration.inMinutes / 60.0;
+
+  /// Date/heure de prise de poste.
+  DateTime get startDateTime => DateTime(
+        date.year,
+        date.month,
+        date.day,
+        startTime.hour,
+        startTime.minute,
+      );
+
+  /// Date/heure de fin de poste (peut être le lendemain).
+  DateTime get endDateTime => startDateTime.add(duration);
 
   bool get isWeekend {
     final weekday = date.weekday;

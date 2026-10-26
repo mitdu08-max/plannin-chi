@@ -14,8 +14,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  int _selectedIndex = 0;
-
   static final List<Widget> _screens = [
     const ImportScreen(),
     const CalendarScreen(),
@@ -49,6 +47,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final userConfigAsync = ref.watch(userConfigProvider);
+    final selectedIndex = ref.watch(selectedTabProvider);
 
     return userConfigAsync.when(
       loading: () => const Scaffold(
@@ -79,11 +78,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
 
         return Scaffold(
-          body: _screens[_selectedIndex],
+          body: _screens[selectedIndex.clamp(0, _screens.length - 1)],
           bottomNavigationBar: NavigationBar(
-            selectedIndex: _selectedIndex,
+            selectedIndex: selectedIndex.clamp(0, _screens.length - 1),
             onDestinationSelected: (index) {
-              setState(() => _selectedIndex = index);
+              ref.read(selectedTabProvider.notifier).state = index;
             },
             destinations: _destinations,
           ),

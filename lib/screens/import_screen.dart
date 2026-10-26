@@ -35,7 +35,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Import Planning'),
-        automaticallyImplyLeading: widget.isFirstLaunch,
+        automaticallyImplyLeading: !widget.isFirstLaunch,
       ),
       body: userConfigAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -373,9 +373,10 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             ),
             const SizedBox(height: 12),
             const Text(
-              '• Colonnes = Jours du mois (1 à 31)\n'
-              '• Lignes = 12 agents de l\'équipe\n'
-              '• Codes: N/NUIT/GARDE = Travail, R/REPOS/CONGE = Repos',
+              '• Une colonne par jour du mois, une ligne par agent\n'
+              '• Codes lus : N = nuit travaillée, RH/R = repos,\n'
+              '   CA/CET/CFR = congés, F/F EXT = formation\n'
+              '• Le mois est lu dans le document (sinon il vous est demandé)',
               style: TextStyle(fontSize: 13),
             ),
           ],
@@ -434,30 +435,29 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     try {
       setProcessing(true, 'Sélection du fichier PDF...');
 
-      final files = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
       );
 
-      if (files.isEmpty) {
+      if (result == null || result.files.isEmpty) {
         setProcessing(false, '');
         return;
       }
 
-      final file = File(files.first.path!);
-      setProcessing(true, 'Lecture du PDF...');
+      final path = result.files.first.path;
+      if (path == null) {
+        setProcessing(false, '');
+        _showErrorSnackBar('Fichier inaccessible (chemin introuvable).');
+        return;
+      }
 
-      final parseResult = await PdfParserService.parsePlanningPdfFull(file);
+      setProcessing(true, 'Lecture du PDF...');
+      final parseResult = await PdfParserService.parsePlanningPdfFile(File(path));
 
       if (!mounted) return;
       setProcessing(false, '');
-      await _showPreviewAndConfirm(
-        parseResult.agentShifts,
-        parseResult.agentVacations,
-        file.path,
-        year: parseResult.year,
-        month: parseResult.month,
-      );
+      await _showPreviewAndConfirm(parseResult, path);
     } catch (e) {
       setProcessing(false, '');
       if (mounted) {
@@ -470,7 +470,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     try {
       setProcessing(true, fromGallery ? 'Ouverture de la galerie...' : 'Ouverture de la caméra...');
 
-      final XFile? pickedFile = await _imagePicker.pickImage(
+      final pickedFile = await _imagePicker.pickImage(
         source: fromGallery ? ImageSource.gallery : ImageSource.camera,
         imageQuality: 95,
         maxWidth: 3000,
@@ -485,17 +485,11 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       final file = File(pickedFile.path);
       setProcessing(true, 'Analyse de l\'image (OCR)...');
 
-      final parseResult = await OcrParserService.parsePlanningImageFull(file);
+      final parseResult = await OcrParserService.parsePlanningImage(file);
 
       if (!mounted) return;
       setProcessing(false, '');
-      await _showPreviewAndConfirm(
-        parseResult.agentShifts,
-        parseResult.agentVacations,
-        file.path,
-        year: parseResult.year,
-        month: parseResult.month,
-      );
+      await _showPreviewAndConfirm(parseResult, file.path);
     } catch (e) {
       setProcessing(false, '');
       if (mounted) {
@@ -506,123 +500,187 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   // ========== PREVIEW & CONFIRMATION ==========
 
+  /// Résout l'agent correspondant à l'utilisateur configuré.
+  String? _resolveCurrentAgent(UserConfig? userConfig, List<String> detectedAgents) {
+    if (userConfig == null) return null;
+
+    final trigramme = userConfig.userTrigramme.trim().toUpperCase();
+    final name = userConfig.userName.trim().toUpperCase();
+
+    for (final agent in detectedAgents) {
+      final upper = agent.toUpperCase();
+      if (trigramme.isNotEmpty && upper == trigramme) return agent;
+      if (name.isNotEmpty && upper == name) return agent;
+      // tolérance : "DUPONT" saisi pour l'agent "DUPONT J." ou inverse
+      if (name.length >= 3 && upper.startsWith(name)) return agent;
+    }
+    return null;
+  }
+
+  /// Demande le mois et l'année quand le document ne les contient pas.
+  Future<(int, int)?> _askMonthAndYear() async {
+    final now = DateTime.now();
+    var year = now.year;
+    var month = now.month;
+
+    return showDialog<(int, int)>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          return AlertDialog(
+            title: const Text('Mois du planning'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Le mois n\'a pas pu être lu dans le document. '
+                  'Indiquez-le pour éviter d\'enregistrer les gardes au mauvais mois.',
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: month,
+                  decoration: const InputDecoration(labelText: 'Mois'),
+                  items: [
+                    for (var i = 1; i <= 12; i++)
+                      DropdownMenuItem(
+                        value: i,
+                        child: Text(AppConstants.monthsFr[i - 1]),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setLocalState(() => month = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: year,
+                  decoration: const InputDecoration(labelText: 'Année'),
+                  items: [
+                    for (var y = now.year - 2; y <= now.year + 2; y++)
+                      DropdownMenuItem(value: y, child: Text('$y')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setLocalState(() => year = value);
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(null),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop((year, month)),
+                child: const Text('Continuer'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _showPreviewAndConfirm(
-    Map<String, List<int>> agentShifts,
-    Map<String, Map<int, String>> agentVacations,
-    String sourcePath, {
-    int? year,
-    int? month,
-  }) async {
-    if (agentShifts.isEmpty) {
+    PlanningParseResult parsed,
+    String sourcePath,
+  ) async {
+    var result = parsed;
+
+    // 1. Le mois n'est jamais deviné : si le titre est illisible, on demande.
+    if (!result.monthDetected) {
+      final picked = await _askMonthAndYear();
+      if (picked == null) return;
+      setProcessing(true, 'Nouvelle analyse avec le mois sélectionné...');
+      result = PdfParserService.parsePlanningText(
+        result.rawText,
+        forcedYear: picked.$1,
+        forcedMonth: picked.$2,
+      );
+      setProcessing(false, '');
+    }
+
+    if (result.agentShifts.isEmpty) {
       _showErrorSnackBar('Aucune donnée de planning détectée dans le fichier.');
       return;
     }
+
+    final year = result.year!;
+    final month = result.month!;
 
     final db = ref.read(databaseServiceProvider);
     final teamMembers = db.getAllTeamMembers();
     final userConfig = db.getUserConfig();
 
-    // Determine current month/year from file or use current
-    final now = DateTime.now();
-    final int resolvedYear = year ?? now.year;
-    final int resolvedMonth = month ?? now.month;
-
-    String? currentUserTrigramme = userConfig?.userTrigramme;
-
-    // If user not configured or trigramme not in detected agents, show selection dialog
-    if (currentUserTrigramme == null || !agentShifts.containsKey(currentUserTrigramme)) {
-      currentUserTrigramme = await _showUserSelectionDialog(agentShifts.keys.toList());
-      if (currentUserTrigramme == null) return; // User cancelled
+    var resolvedAgent = _resolveCurrentAgent(userConfig, result.agentShifts.keys.toList());
+    if (resolvedAgent == null) {
+      resolvedAgent = await _showUserSelectionDialog(result.agentShifts.keys.toList());
+      if (resolvedAgent == null) return; // annulé
     }
+    final currentAgent = resolvedAgent;
 
-    final currentUserDays = agentShifts[currentUserTrigramme] ?? [];
-
+    final currentUserDays = result.agentShifts[currentAgent] ?? const <int>[];
     if (currentUserDays.isEmpty) {
-      _showErrorSnackBar('Aucune nuit de garde détectée pour $currentUserTrigramme.');
+      _showErrorSnackBar('Aucune nuit de garde détectée pour $currentAgent.');
       return;
     }
 
-    // Build preview data
+    // 2. Construction de l'aperçu
     final previewItems = <PreviewNightItem>[];
     final allTeamMembers = <TeamMember>[];
 
-    // Create TeamMember objects for all detected agents
-    for (final trigramme in agentShifts.keys) {
+    for (final agent in result.agentShifts.keys) {
       final existing = teamMembers.firstWhere(
-        (m) => m.trigramme == trigramme,
+        (m) => m.trigramme == agent,
         orElse: () => TeamMember(
-          id: trigramme,
-          firstName: trigramme,
+          id: agent,
+          firstName: agent,
           lastName: '',
-          trigramme: trigramme,
+          trigramme: agent,
         ),
       );
       allTeamMembers.add(existing);
     }
 
-    // Get shift times from user config or defaults
     final shiftStartTime = userConfig?.shiftStartTime ?? AppConstants.defaultShiftStartTime;
     final shiftEndTime = userConfig?.shiftEndTime ?? AppConstants.defaultShiftEndTime;
 
     for (final day in currentUserDays) {
-      final date = DateTime(resolvedYear, resolvedMonth, day);
-      final coWorkers = <TeamMember>[];
+      final date = DateTime(year, month, day);
+      final coWorkers = allTeamMembers
+          .where((m) => m.trigramme != currentAgent &&
+              (result.agentShifts[m.trigramme] ?? const <int>[]).contains(day))
+          .toList();
 
-      for (final entry in agentShifts.entries) {
-        if (entry.key != currentUserTrigramme && entry.value.contains(day)) {
-          final colleague = allTeamMembers.firstWhere(
-            (m) => m.trigramme == entry.key,
-            orElse: () => TeamMember(
-              id: entry.key,
-              firstName: entry.key,
-              lastName: '',
-              trigramme: entry.key,
-            ),
-          );
-          coWorkers.add(colleague);
-        }
-      }
-
-      previewItems.add(PreviewNightItem(
-        date: date,
-        coWorkers: coWorkers,
-      ));
+      previewItems.add(PreviewNightItem(date: date, coWorkers: coWorkers));
     }
 
-    // Get vacations for current user
-    final userVacations = agentVacations[currentUserTrigramme] ??
-        agentVacations.entries
-            .firstWhere(
-              (e) => e.key.toUpperCase() == currentUserTrigramme!.toUpperCase() ||
-                     e.key.toUpperCase().startsWith(currentUserTrigramme!.toUpperCase()) ||
-                     currentUserTrigramme!.toUpperCase().startsWith(e.key.toUpperCase()),
-              orElse: () => const MapEntry('', {}),
-            )
-            .value;
+    final userVacations = result.agentVacations[currentAgent] ?? const <int, String>{};
 
-    // Show preview dialog with night shifts and vacations
     final confirmed = await _showPreviewDialog(
-      trigramme: currentUserTrigramme,
+      agent: currentAgent,
       previewItems: previewItems,
-      allTeamMembers: allTeamMembers,
       sourcePath: sourcePath,
       userVacations: userVacations,
-      year: resolvedYear,
-      month: resolvedMonth,
+      year: year,
+      month: month,
+      warnings: result.warnings,
     );
 
-    if (confirmed && mounted) {
-      await _saveToDatabase(
-        previewItems: previewItems,
-        allTeamMembers: allTeamMembers,
-        currentUserTrigramme: currentUserTrigramme,
-        shiftStartTime: shiftStartTime,
-        shiftEndTime: shiftEndTime,
-        year: resolvedYear,
-        month: resolvedMonth,
-        agentVacations: agentVacations,
-      );
-    }
+    if (!confirmed || !mounted) return;
+
+    await _saveToDatabase(
+      previewItems: previewItems,
+      allTeamMembers: allTeamMembers,
+      currentAgent: currentAgent,
+      shiftStartTime: shiftStartTime,
+      shiftEndTime: shiftEndTime,
+      year: year,
+      month: month,
+      userVacations: userVacations,
+    );
   }
 
   Future<String?> _showUserSelectionDialog(List<String> detectedTrigrammes) async {
@@ -681,13 +739,13 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   }
 
   Future<bool> _showPreviewDialog({
-    required String trigramme,
+    required String agent,
     required List<PreviewNightItem> previewItems,
-    required List<TeamMember> allTeamMembers,
     required String sourcePath,
     required Map<int, String> userVacations,
     required int year,
     required int month,
+    required List<String> warnings,
   }) async {
     // Build combined list of preview items (night shifts + vacation days)
     final List<Map<String, dynamic>> allItems = [];
@@ -722,7 +780,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           children: [
             const Icon(Icons.preview_outlined),
             const SizedBox(width: 8),
-            Expanded(child: Text('Aperçu - $trigramme')),
+            Expanded(child: Text('Aperçu - $agent')),
           ],
         ),
         content: SizedBox(
@@ -739,9 +797,53 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Source: ${sourcePath.split('/').last}',
+                '${AppConstants.monthsFr[month - 1]} $year - source : ${sourcePath.split('/').last}',
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
+              if (warnings.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.6)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded,
+                              color: Colors.orange, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Vérifiez ces lignes avant de valider',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      for (final warning in warnings.take(4))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text('• $warning', style: const TextStyle(fontSize: 12)),
+                        ),
+                      if (warnings.length > 4)
+                        Text(
+                          '• … et ${warnings.length - 4} autre(s)',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Expanded(
                 child: ListView.builder(
@@ -761,9 +863,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                       final code = row['code'] as String;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
-                        color: Colors.orange.shade50,
+                        color: Colors.orange.withValues(alpha: 0.12),
                         shape: RoundedRectangleBorder(
-                          side: BorderSide(color: Colors.orange.shade300),
+                          side: BorderSide(color: Colors.orange.withValues(alpha: 0.6)),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: ListTile(
@@ -775,11 +877,17 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                             ),
                           ),
                           title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(
-                            '🏖️ Vacances ($code)',
-                            style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.w600),
+                          subtitle: const Text(
+                            '🏖️ Jour de congé',
+                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
                           ),
-                          trailing: Icon(Icons.beach_access, color: Colors.orange.shade800),
+                          trailing: Text(
+                            code,
+                            style: const TextStyle(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       );
                     }
@@ -832,133 +940,120 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   Future<void> _saveToDatabase({
     required List<PreviewNightItem> previewItems,
     required List<TeamMember> allTeamMembers,
-    required String currentUserTrigramme,
+    required String currentAgent,
     required TimeOfDay shiftStartTime,
     required TimeOfDay shiftEndTime,
     required int year,
     required int month,
-    required Map<String, Map<int, String>> agentVacations,
+    required Map<int, String> userVacations,
   }) async {
     setProcessing(true, 'Enregistrement en base...');
 
     try {
       final db = ref.read(databaseServiceProvider);
 
-      // Save all team members
+      // 1. Équipe : upsert (on ne perd pas les noms déjà saisis)
       await db.saveAllTeamMembers(allTeamMembers);
 
-      // Create and save night shifts
-      final currentUser = allTeamMembers.firstWhere((m) => m.trigramme == currentUserTrigramme);
+      final currentUser =
+          allTeamMembers.firstWhere((m) => m.trigramme == currentAgent);
 
+      // 2. Import idempotent : on purge le mois avant de le réécrire, sinon
+      // une garde retirée du nouveau planning restait indéfiniment en base.
+      final deleted =
+          await db.deleteNightShiftsForMonth(currentUser.id, year, month);
+
+      // 3. Gardes du mois
       for (final item in previewItems) {
-        final coWorkerIds = item.coWorkers.map((c) => c.id).toList();
-
         final shift = NightShift(
           id: '${currentUser.id}_${year}_${month}_${item.date.day}',
           date: item.date,
           agentId: currentUser.id,
-          agentTrigramme: currentUserTrigramme,
+          agentTrigramme: currentAgent,
           startTime: shiftStartTime,
           endTime: shiftEndTime,
           isWorking: true,
-          coWorkerIds: coWorkerIds,
+          coWorkerIds: item.coWorkers.map((c) => c.id).toList(),
           isManualOverride: false,
         );
-
         await db.saveNightShift(shift);
       }
 
-      // Save vacation days for current user
-      final userVacations = agentVacations[currentUserTrigramme] ??
-          agentVacations.entries
-              .firstWhere(
-                (e) => e.key.toUpperCase() == currentUserTrigramme.toUpperCase() ||
-                       e.key.toUpperCase().startsWith(currentUserTrigramme.toUpperCase()) ||
-                       currentUserTrigramme.toUpperCase().startsWith(e.key.toUpperCase()),
-                orElse: () => const MapEntry('', {}),
-              )
-              .value;
+      // 4. Congés : uniquement les jours qui ne sont pas déjà une garde
+      final workingDays = previewItems.map((item) => item.date.day).toSet();
       for (final entry in userVacations.entries) {
         final day = entry.key;
-        final vacationCode = entry.value;
-        final date = DateTime(year, month, day);
+        if (workingDays.contains(day)) continue;
 
-        // Only save if not already a working shift
-        final existingShift = previewItems.firstWhere(
-          (item) => item.date.day == day,
-          orElse: () => PreviewNightItem(date: date, coWorkers: []),
+        await db.saveNightShift(
+          NightShift(
+            id: '${currentUser.id}_${year}_${month}_$day',
+            date: DateTime(year, month, day),
+            agentId: currentUser.id,
+            agentTrigramme: currentAgent,
+            startTime: shiftStartTime,
+            endTime: shiftEndTime,
+            isWorking: false,
+            isVacation: true,
+            vacationType: entry.value,
+            coWorkerIds: const [],
+          ),
         );
-
-        // If there's already a working shift for this day, skip vacation
-        if (existingShift.date.day == day && existingShift.coWorkers.isNotEmpty || previewItems.any((i) => i.date.day == day)) {
-          // Check if this day already has a working shift
-          final hasWorkingShift = previewItems.any((i) => i.date.day == day);
-          if (hasWorkingShift) continue;
-        }
-
-        final vacationShift = NightShift(
-          id: '${currentUser.id}_${year}_${month}_$day',
-          date: date,
-          agentId: currentUser.id,
-          agentTrigramme: currentUserTrigramme,
-          startTime: shiftStartTime,
-          endTime: shiftEndTime,
-          isWorking: false,
-          isVacation: true,
-          vacationType: vacationCode,
-          coWorkerIds: const [],
-        );
-
-        await db.saveNightShift(vacationShift);
       }
 
-      // Update or create user config with selected agent
-      var userConfig = db.getUserConfig();
-      if (userConfig != null) {
-        final updatedConfig = userConfig.copyWith(
-          userId: currentUser.id,
-          userTrigramme: currentUserTrigramme,
-          userName: userConfig.userName.isEmpty ? currentUserTrigramme : userConfig.userName,
-        );
-        await db.saveUserConfig(updatedConfig);
-        userConfig = updatedConfig;
-      } else {
-        final newConfig = UserConfig(
-          userId: currentUser.id,
-          userName: currentUser.firstName.isNotEmpty ? currentUser.firstName : currentUserTrigramme,
-          userTrigramme: currentUserTrigramme,
-          shiftStartTime: shiftStartTime,
-          shiftEndTime: shiftEndTime,
-          shiftDurationHours: AppConstants.defaultShiftDurationHours,
-          notificationDelayMinutes: AppConstants.defaultNotificationDelayMinutes,
-          notificationsEnabled: true,
-        );
-        await db.saveUserConfig(newConfig);
-        userConfig = newConfig;
-      }
+      // 5. Configuration utilisateur (identité stable : l'id de l'agent)
+      final existingConfig = db.getUserConfig();
+      final userConfig = existingConfig == null
+          ? UserConfig(
+              userId: currentUser.id,
+              userName: currentUser.firstName.isNotEmpty
+                  ? currentUser.firstName
+                  : currentAgent,
+              userTrigramme: currentAgent,
+              shiftStartTime: shiftStartTime,
+              shiftEndTime: shiftEndTime,
+              shiftDurationHours: AppConstants.defaultShiftDurationHours,
+              notificationDelayMinutes: AppConstants.defaultNotificationDelayMinutes,
+              notificationsEnabled: true,
+            )
+          : existingConfig.copyWith(
+              userId: currentUser.id,
+              userTrigramme: currentAgent,
+              userName: existingConfig.userName.isEmpty
+                  ? currentAgent
+                  : existingConfig.userName,
+            );
 
-      // Schedule notifications for upcoming shifts if enabled
+      await db.saveUserConfig(userConfig);
+
+      // 6. Rappels (autorisation demandée ici : c'est le moment où
+      // l'utilisateur attend explicitement des notifications)
       if (userConfig.notificationsEnabled) {
         try {
+          await NotificationService().requestPermissions();
           await NotificationService().rescheduleAllNotifications(
             userId: currentUser.id,
             shiftStartTime: shiftStartTime,
             notificationDelayMinutes: userConfig.notificationDelayMinutes,
           );
         } catch (e) {
-          print('Notification reschedule warning: $e');
+          debugPrint('Replanification des rappels impossible : $e');
         }
       }
 
-      // Invalidate providers to refresh UI
+      // 7. Rafraîchissement de l'UI
       ref.invalidate(teamMembersProvider);
       ref.invalidate(allNightShiftsProvider);
       ref.invalidate(userConfigProvider);
+      ref.read(selectedTabProvider.notifier).state = 0;
 
       setProcessing(false, '');
 
       if (mounted) {
-        _showSuccessSnackBar('${previewItems.length} nuit(s) enregistrée(s) avec succès !');
+        final suffix = deleted > 0 ? ' ($deleted ancienne(s) garde(s) remplacée(s))' : '';
+        _showSuccessSnackBar(
+          '${previewItems.length} nuit(s) enregistrée(s) pour ${AppConstants.monthsFr[month - 1]} $year$suffix',
+        );
       }
     } catch (e) {
       setProcessing(false, '');
@@ -999,9 +1094,93 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     );
   }
 
-  void _showChangeUserDialog() {
-    // TODO: Implement user change dialog
-    _showErrorSnackBar('Fonctionnalité à venir');
+  /// Permet de changer d'agent associé (réintégration, changement de poste...).
+  Future<void> _showChangeUserDialog() async {
+    final db = ref.read(databaseServiceProvider);
+    final members = db.getAllTeamMembers();
+
+    if (members.isEmpty) {
+      _showErrorSnackBar('Importez d\'abord un planning pour choisir un profil.');
+      return;
+    }
+
+    final currentTrigramme = db.getUserConfig()?.userTrigramme;
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Changer de profil'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 360,
+          child: ListView.builder(
+            itemCount: members.length,
+            itemBuilder: (context, index) {
+              final member = members[index];
+              final isCurrent = member.trigramme == currentTrigramme;
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: isCurrent
+                      ? Theme.of(context).colorScheme.tertiary
+                      : Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.black,
+                  child: Text(
+                    member.trigramme.isNotEmpty
+                        ? member.trigramme.substring(0, 1).toUpperCase()
+                        : '?',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                title: Text(member.trigramme),
+                subtitle: Text(member.firstName),
+                trailing: isCurrent ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.of(context).pop(member.trigramme),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Annuler'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null || selected == currentTrigramme) return;
+
+    final member = members.firstWhere((m) => m.trigramme == selected);
+    final config = db.getUserConfig();
+
+    final updated = config == null
+        ? UserConfig(
+            userId: member.id,
+            userName: member.firstName.isEmpty ? member.trigramme : member.firstName,
+            userTrigramme: member.trigramme,
+          )
+        : config.copyWith(
+            userId: member.id,
+            userTrigramme: member.trigramme,
+            userName: member.firstName.isEmpty ? member.trigramme : member.firstName,
+          );
+
+    await db.saveUserConfig(updated);
+
+    ref.invalidate(userConfigProvider);
+    ref.invalidate(allNightShiftsProvider);
+
+    if (updated.notificationsEnabled) {
+      await NotificationService().rescheduleAllNotifications(
+        userId: updated.userId,
+        shiftStartTime: updated.shiftStartTime,
+        notificationDelayMinutes: updated.notificationDelayMinutes,
+      );
+    }
+
+    if (mounted) {
+      _showSuccessSnackBar('Profil actif : ${member.trigramme}');
+    }
   }
 }
 

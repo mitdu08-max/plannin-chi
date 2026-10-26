@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ---------------------------------------------------------------------------
+# Données nominatives : ne JAMAIS versionner de planning réel
+# (noms de soignants). Placez vos PDF/captures localement uniquement.
+# ---------------------------------------------------------------------------
+/*.pdf
+/*.PDF
+/WhatsApp Image*
+/screenshots/

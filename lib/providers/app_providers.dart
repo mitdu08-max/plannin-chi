@@ -59,11 +59,6 @@ final userConfigProvider = FutureProvider<UserConfig?>((ref) async {
   return db.getUserConfig();
 });
 
-// Current User Provider (for the logged-in user)
-final currentUserProvider = StateProvider<TeamMember?>((ref) => null);
-
-// Selected Month Provider (for calendar/stats navigation)
-final selectedMonthProvider = StateProvider<DateTime>((ref) => DateTime.now());
-
-// Notification Settings Provider
-final notificationsEnabledProvider = StateProvider<bool>((ref) => true);
+// Onglet actif de la barre de navigation (0 = Import, 1 = Calendrier, ...)
+// Permet aux écrans de renvoyer l'utilisateur vers l'import sans callback.
+final selectedTabProvider = StateProvider<int>((ref) => 0);

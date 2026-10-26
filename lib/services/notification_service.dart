@@ -1,93 +1,141 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
+
 import '../models/models.dart';
-import '../services/database_service.dart';
+import 'database_service.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  static const String _channelId = 'night_shift_channel';
+  static const String _channelName = 'Rappels de garde';
+  static const String _channelDescription =
+      'Rappels avant une garde de nuit, avec les collègues de service';
+
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
   final DatabaseService _db = DatabaseService();
 
   bool _isInitialized = false;
 
   bool get isInitialized => _isInitialized;
 
-  /// Initialize the notification service
+  /// Initialise le plugin (idempotent).
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     tz_data.initializeTimeZones();
 
-    const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const DarwinInitializationSettings iosInit = DarwinInitializationSettings(
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosInit = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
 
-    const InitializationSettings initSettings = InitializationSettings(
-      android: androidInit,
-      iOS: iosInit,
-    );
-
     await _notifications.initialize(
-      initSettings,
+      const InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
-    // Create notification channel for Android
     await _createNotificationChannel();
-
     _isInitialized = true;
   }
 
   Future<void> _createNotificationChannel() async {
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'night_shift_channel',
-      'Night Shift Notifications',
-      description: 'Notifications for upcoming night shifts',
+    const channel = AndroidNotificationChannel(
+      _channelId,
+      _channelName,
+      description: _channelDescription,
       importance: Importance.high,
       enableVibration: true,
       playSound: true,
     );
 
     await _notifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
   }
 
   void _onNotificationTapped(NotificationResponse response) {
-    // Handle notification tap - could navigate to calendar screen
+    // L'ouverture de l'application sur le calendrier est gérée par le lancement
+    // normal : rien de spécifique à faire ici pour l'instant.
   }
 
-  /// Schedule a shift notification
+  /// Demande les autorisations nécessaires (Android 13+ et alarmes exactes).
+  ///
+  /// À appeler explicitement : sans `POST_NOTIFICATIONS`, aucune notification
+  /// ne s'affiche sur Android 13+, et sans `SCHEDULE_EXACT_ALARM` le rappel
+  /// peut être retardé.
+  Future<bool> requestPermissions() async {
+    await initialize();
+
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return true;
+
+    var granted = true;
+    try {
+      final notificationsGranted =
+          await android.requestNotificationsPermission() ?? true;
+      granted = notificationsGranted;
+
+      // Android 12+ : autorisation « alarmes et rappels ».
+      final exactGranted = await android.requestExactAlarmsPermission() ?? true;
+      granted = granted && exactGranted;
+    } on Object catch (e) {
+      debugPrint('Demande d\'autorisation impossible : $e');
+      return false;
+    }
+
+    return granted;
+  }
+
+  /// Vrai si l'utilisateur a autorisé l'affichage des notifications.
+  Future<bool> areNotificationsAllowed() async {
+    await initialize();
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return true;
+    return await android.areNotificationsEnabled() ?? true;
+  }
+
+  /// Programme le rappel avant une garde.
+  ///
+  /// Le rappel est **unique** (pas de `matchDateTimeComponents`, qui provoquait
+  /// une répétition annuelle de la notification à la même date).
   Future<void> scheduleShiftNotification({
     required NightShift shift,
     required List<TeamMember> coWorkers,
     required TimeOfDay shiftStartTime,
     required int notificationDelayMinutes,
   }) async {
-    if (!_isInitialized) await initialize();
+    await initialize();
+    if (!shift.isWorking) return;
 
     final notificationId = _generateNotificationId(shift.id);
-    final scheduledDate = _calculateNotificationTime(shift.date, shiftStartTime, notificationDelayMinutes);
+    final scheduledDate = _calculateNotificationTime(
+      shift.date,
+      shiftStartTime,
+      notificationDelayMinutes,
+    );
 
-    // Don't schedule if the time has already passed
-    if (scheduledDate.isBefore(DateTime.now())) return;
+    if (!scheduledDate.isAfter(DateTime.now())) return;
 
     final title = '🌙 Prise de poste ce soir';
-    final body = _buildNotificationBody(shift, coWorkers, shiftStartTime);
+    final body = _buildNotificationBody(coWorkers, shiftStartTime);
 
     const notificationDetails = NotificationDetails(
       android: AndroidNotificationDetails(
-        'night_shift_channel',
-        'Night Shift Notifications',
-        channelDescription: 'Notifications for upcoming night shifts',
+        _channelId,
+        _channelName,
+        channelDescription: _channelDescription,
         importance: Importance.high,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
@@ -101,50 +149,58 @@ class NotificationService {
       ),
     );
 
+    final when = tz.TZDateTime.from(scheduledDate, tz.local);
+
     try {
       await _notifications.zonedSchedule(
         notificationId,
         title,
         body,
-        tz.TZDateTime.from(scheduledDate, tz.local),
+        when,
         notificationDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.dateAndTime,
       );
-    } catch (_) {
-      // Fallback to inexact if exact alarms are not permitted by system
+    } on Object catch (e) {
+      // Repli si les alarmes exactes ne sont pas autorisées par le système.
+      debugPrint('Alarme exacte refusée, repli en mode inexact : $e');
       try {
         await _notifications.zonedSchedule(
           notificationId,
           title,
           body,
-          tz.TZDateTime.from(scheduledDate, tz.local),
+          when,
           notificationDetails,
-          androidScheduleMode: AndroidScheduleMode.inexact,
-          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-          matchDateTimeComponents: DateTimeComponents.dateAndTime,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         );
-      } catch (e) {
-        print('Could not schedule notification $notificationId: $e');
+      } on Object catch (e2) {
+        debugPrint('Notification $notificationId non programmée : $e2');
       }
     }
   }
 
-  /// Build the notification message body with colleagues
-  String _buildNotificationBody(NightShift shift, List<TeamMember> coWorkers, TimeOfDay shiftStartTime) {
-    final timeFormat = '${shiftStartTime.hour.toString().padLeft(2, '0')}:${shiftStartTime.minute.toString().padLeft(2, '0')}';
+  /// Message : « Prise de poste ce soir à 19:00h avec Thomas et Julie. »
+  String _buildNotificationBody(
+    List<TeamMember> coWorkers,
+    TimeOfDay shiftStartTime,
+  ) {
+    final time = '${shiftStartTime.hour.toString().padLeft(2, '0')}h'
+        '${shiftStartTime.minute.toString().padLeft(2, '0') == '00' ? '' : shiftStartTime.minute.toString().padLeft(2, '0')}';
 
     if (coWorkers.isEmpty) {
-      return 'Prise de poste ce soir à ${timeFormat}h (Seul de garde).';
+      return 'Prise de poste ce soir à $time (Seul de garde).';
     }
 
-    final colleagueNames = coWorkers.map((c) => c.firstName.isNotEmpty ? c.firstName : c.trigramme).join(' et ');
-    return 'Prise de poste ce soir à ${timeFormat}h avec $colleagueNames. Bonne garde !';
+    final names = coWorkers
+        .map((c) => c.firstName.isNotEmpty ? c.firstName : c.trigramme)
+        .join(' et ');
+    return 'Prise de poste ce soir à $time avec $names. Bonne garde !';
   }
 
-  /// Calculate when to send the notification (shift time - delay)
-  DateTime _calculateNotificationTime(DateTime shiftDate, TimeOfDay shiftStartTime, int delayMinutes) {
+  DateTime _calculateNotificationTime(
+    DateTime shiftDate,
+    TimeOfDay shiftStartTime,
+    int delayMinutes,
+  ) {
     final shiftDateTime = DateTime(
       shiftDate.year,
       shiftDate.month,
@@ -155,96 +211,66 @@ class NotificationService {
     return shiftDateTime.subtract(Duration(minutes: delayMinutes));
   }
 
-  /// Generate a unique notification ID from shift ID
-  int _generateNotificationId(String shiftId) {
-    return shiftId.hashCode & 0x7FFFFFFF; // Positive 31-bit integer
-  }
+  int _generateNotificationId(String shiftId) => shiftId.hashCode & 0x7FFFFFFF;
 
-  /// Cancel a specific shift notification
   Future<void> cancelShiftNotification(String shiftId) async {
-    final notificationId = _generateNotificationId(shiftId);
-    await _notifications.cancel(notificationId);
+    await _notifications.cancel(_generateNotificationId(shiftId));
   }
 
-  /// Cancel all scheduled notifications
   Future<void> cancelAllNotifications() async {
+    await initialize();
     await _notifications.cancelAll();
   }
 
-  /// Reschedule all notifications for user's upcoming shifts
+  /// Replanifie tous les rappels des gardes à venir de l'utilisateur.
   Future<void> rescheduleAllNotifications({
     required String userId,
     required TimeOfDay shiftStartTime,
     required int notificationDelayMinutes,
   }) async {
-    if (!_isInitialized) await initialize();
+    await initialize();
+    await _notifications.cancelAll();
 
-    // Cancel all existing
-    await cancelAllNotifications();
-
-    // Get user's future shifts
     final now = DateTime.now();
-    final allShifts = _db.getAllNightShifts();
-    final userShifts = allShifts
+    final userShifts = _db
+        .getAllNightShifts()
         .where((s) =>
             s.agentId == userId &&
             s.isWorking &&
             s.date.isAfter(now.subtract(const Duration(days: 1))))
         .toList();
 
-    // Get team members for colleague names
     final teamMembers = _db.getAllTeamMembers();
 
-    // Schedule notifications for each shift
     for (final shift in userShifts) {
-      final coWorkerMembers = teamMembers
-          .where((m) => shift.coWorkerIds.contains(m.id))
-          .toList();
+      final coWorkers =
+          teamMembers.where((m) => shift.coWorkerIds.contains(m.id)).toList();
 
       await scheduleShiftNotification(
         shift: shift,
-        coWorkers: coWorkerMembers,
-        shiftStartTime: shiftStartTime,
+        coWorkers: coWorkers,
+        shiftStartTime: shift.startTime,
         notificationDelayMinutes: notificationDelayMinutes,
       );
     }
   }
 
-  /// Send a test notification immediately
+  /// Notification de test immédiate.
   Future<void> sendTestNotification({
     required TimeOfDay shiftStartTime,
     required List<TeamMember> coWorkers,
   }) async {
-    if (!_isInitialized) await initialize();
-
-    const testId = 999999;
-    final now = DateTime.now();
-
-    final title = '🌙 Test de notification';
-    final body = _buildNotificationBody(
-      NightShift(
-        id: 'test',
-        date: now,
-        agentId: 'test',
-        agentTrigramme: 'TST',
-        startTime: shiftStartTime,
-        endTime: const TimeOfDay(hour: 7, minute: 0),
-        isWorking: true,
-        coWorkerIds: coWorkers.map((c) => c.id).toList(),
-      ),
-      coWorkers,
-      shiftStartTime,
-    );
+    await initialize();
 
     await _notifications.show(
-      testId,
-      title,
-      body,
+      999999,
+      '🌙 Test de notification',
+      _buildNotificationBody(coWorkers, shiftStartTime),
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'night_shift_channel',
-          'Night Shift Notifications',
-          channelDescription: 'Notifications for upcoming night shifts',
+          _channelId,
+          _channelName,
+          channelDescription: _channelDescription,
           importance: Importance.high,
           priority: Priority.high,
           icon: '@mipmap/ic_launcher',
@@ -258,14 +284,5 @@ class NotificationService {
         ),
       ),
     );
-  }
-
-  /// Request notification permissions (Android 13+)
-  Future<bool> requestPermissions() async {
-    final androidPlugin = _notifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-
-    final granted = await androidPlugin?.requestNotificationsPermission();
-    return granted ?? false;
   }
 }

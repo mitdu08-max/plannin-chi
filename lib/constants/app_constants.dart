@@ -13,6 +13,15 @@ class AppConstants {
   // Team size
   static const int teamSize = 12;
 
+  /// Noms d'agents connus, utilisés comme amorce par le parseur de planning.
+  /// Les lignes non reconnues sont désormais détectées automatiquement,
+  /// cette liste peut donc être adaptée sans casser l'import.
+  static const List<String> knownAgentNames = [
+    'RINAUDO', 'TETON', 'PIAZZA', 'RENFORT 1', 'RENFORT',
+    'LEROY', 'MONTEILLET', 'CAUVIERE', 'LIBAULT', 'TOUZET',
+    'ABDELALIM', 'ARRAGAIN', 'MONTREUIL', 'WICKER',
+  ];
+
   // Notification
   static const String notificationChannelId = 'night_shift_notifications';
   static const String notificationChannelName = 'Night Shift Notifications';

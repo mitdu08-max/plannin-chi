@@ -1,57 +1,173 @@
-import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:night_shift_planning/services/pdf_parser_service.dart';
 
-void main() {
-  test('PdfParserService.parsePlanningPdfFull with real user PDF', () async {
-    final pdfPath = r'C:\Users\ATony\.gemini\antigravity-ide\brain\c1247b31-1cc3-4bbf-8a16-e1dc395c9754\.user_uploaded\media_1793023434781.pdf';
-    final file = File(pdfPath);
-    expect(file.existsSync(), isTrue);
+/// Jeu de test **synthétique** : aucun nom de soignant réel.
+/// Les plannings d'origine ne doivent pas être versionnés (cf. .gitignore).
+String _planning({
+  String monthTitle = 'NOVEMBRE 2026',
+  required List<String> rows,
+}) {
+  const header =
+      'D01 L02 M03 M04 J05 V06 S07 D08 L09 M10 M11 J12 V13 S14 D15 L16 M17 '
+      'M18 J19 V20 S21 D22 L23 M24 M25 J26 V27 S28 D29 L30';
 
-    final result = await PdfParserService.parsePlanningPdfFull(file);
-    print('Agents trouvés (${result.agentShifts.length}):');
-    result.agentShifts.forEach((agent, shifts) {
-      print('  $agent: ${shifts.length} nuits -> $shifts');
+  return <String>[
+    header,
+    'Nov S45 Nov Nov Nov Nov Nov Nov S46 Nov Nov Nov Nov Nov Nov S47 Nov Nov '
+        'Nov Nov Nov Nov S48 Nov Nov Nov Nov Nov Nov S49',
+    if (monthTitle.isNotEmpty) monthTitle,
+    'ÉQUIPE DE NUIT',
+    ...rows,
+    'vacances scolaires',
+    'Nom / Prénom',
+  ].join('\n');
+}
+
+/// Construit la ligne d'un agent : [days] cellules, `R` par défaut.
+String _row(
+  String agent, {
+  Map<int, String> codes = const {},
+  int days = 30,
+}) {
+  final cells = [
+    for (var day = 1; day <= days; day++) codes[day] ?? 'R',
+  ];
+  return '$agent ${cells.join(' ')}';
+}
+
+void main() {
+  group('PdfParserService.parsePlanningText', () {
+    test('extrait les nuits, les congés et le mois', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(
+          rows: [
+            _row('DUPONT', codes: {1: 'N', 3: 'CA', 4: 'CA', 5: 'N', 9: 'N'}),
+            _row('MARTIN', codes: {2: 'N', 6: 'N', 10: 'N'}),
+          ],
+        ),
+      );
+
+      expect(result.year, 2026);
+      expect(result.month, 11);
+      expect(result.monthDetected, isTrue);
+      expect(result.totalDays, 30);
+
+      expect(result.agentShifts['DUPONT'], [1, 5, 9]);
+      expect(result.agentVacations['DUPONT'], {3: 'CA', 4: 'CA'});
+      expect(result.agentShifts['MARTIN'], [2, 6, 10]);
+
+      expect(result.warnings, isEmpty,
+          reason: 'warnings = ${result.warnings}');
     });
 
-    expect(result.year, equals(2026));
-    expect(result.month, equals(11));
-    expect(result.agentShifts.length, greaterThanOrEqualTo(12));
-    expect(result.agentShifts.containsKey('RINAUDO'), isTrue);
-    expect(result.agentShifts['RINAUDO'], equals([1, 6, 9, 10, 11, 18, 21, 22, 26, 27, 30]));
-  });
+    test('détecte les agents inconnus (autre équipe que la liste connue)', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(rows: [_row('DUPONT'), _row('MARTIN')]),
+      );
 
-  test('PdfParserService.parsePlanningText with October OCR text', () {
-    const ocrText = '''
-J01 V02 S03 D04 L05 M06 M07 J08 V09 S10 D11 L12 M13 M14 J15 V16 S17 D18 L19 M20 M21 J22 V23 S24 D25 L26 M27 M28 J29 V30 S31
-Oct Oct Oct Oct S41 Oct Oct Oct Oct Oct Oct S42 Oct Oct Oct Oct Oct Oct S43 Oct Oct Oct Oct Oct Oct S44 Oct Oct Oct Oct Oct
-RINAUDO                                R R RH RH N R R R RH N N RH R R N N RH RH N N R R RH N N RH R N R RH N
-TETON R R RH RH N R R R RH N N RH R R N N RH RH R N N R RH N N RH R N R N RH
-PIAZZA R R RH RH N R R R RH N N RH R R N N RH RH R N N R N RH RH N R R N RH N
-RENFORT 1 R R R R N R R R RH N N RH R R N N RH RH R R R R N RH RH N N R R RH N
-LEROY                                          N N RH RH R N N R R RH RH N R R R RH N N RH R R N R RH RH   CA     CA     CA     CA     CA   RH
-MONTEILLET                       N N RH RH R N R F F RH RH N R R R RH N N RH R R N RH N N RH R N R R RH
-CAUVIERE N N RH RH R N N R R RH RH N R R R RH N N RH R R N N RH RH R N N R RH N
-LIBAULT N N RH RH R N N R R RH RH N R R R RH N N RH R R N N RH RH N N R R R RH
-TOUZET R F EXT N N RH R R N N RH RH R N N R R RH RH   CA     CA     CA     CA     CA   RH RH N N R N N RH
-ABDELALIM R F EXT N N RH R R N N RH RH R N N R R RH RH N R R R RH N N RH R R N N RH
-ARRAGAIN R RH N N RH R R N N RH RH R N N R R RH RH N R N R R RH RH   CA     CA     CA     CA     CA   RH
-MONTREUIL R R N N R R R N N R R R N N R R RH RH N R R R RH N N RH R R N N RH
-WICKER R R RH RH J R R J RH J J RH R R R RH J J RH N N R R RH RH J J R R R J
-vacances scolaires
-Nom / Prénom
-OCTOBRE 2026
-ÉQUIPE DE NUIT
-''';
+      // DUPONT et MARTIN ne font pas partie de AppConstants.knownAgentNames
+      expect(result.agentShifts.keys, containsAll(['DUPONT', 'MARTIN']));
+      expect(result.agentShifts.length, 2);
+    });
 
-    final result = PdfParserService.parsePlanningText(ocrText);
-    print('Octobre - Mois: ${result.month}, Année: ${result.year}, Total Jours: ${result.totalDays}');
-    print('ARRAGAIN nuits: ${result.agentShifts['ARRAGAIN']}');
-    print('ARRAGAIN vacances: ${result.agentVacations['ARRAGAIN']}');
+    test('signale une ligne incomplète (risque de décalage)', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(
+          rows: [
+            _row('DUPONT', codes: {1: 'N', 5: 'N'}),
+            _row('MARTIN', days: 27), // 3 cellules manquantes
+          ],
+        ),
+      );
 
-    expect(result.month, equals(10));
-    expect(result.year, equals(2026));
-    expect(result.totalDays, equals(31));
-    expect(result.agentVacations.containsKey('ARRAGAIN'), isTrue);
+      expect(result.hasReliabilityIssue, isTrue);
+      expect(
+        result.warnings.any((w) => w.contains('MARTIN') && w.contains('27')),
+        isTrue,
+        reason: 'warnings = ${result.warnings}',
+      );
+      expect(result.tokenCounts['MARTIN'], 27);
+    });
+
+    test('signale une cellule en trop en fin de ligne', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(
+          rows: [
+            _row('DUPONT', codes: {1: 'N', 5: 'N'}, days: 31),
+            _row('MARTIN'),
+          ],
+        ),
+      );
+
+      expect(
+        result.warnings.any((w) => w.contains('DUPONT')),
+        isTrue,
+        reason: 'warnings = ${result.warnings}',
+      );
+      // Les 30 premiers jours restent alignés
+      expect(result.agentShifts['DUPONT'], [1, 5]);
+    });
+
+    test('ne devine jamais le mois quand il est absent', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(
+          monthTitle: '',
+          rows: [_row('DUPONT', codes: {1: 'N', 5: 'N'})],
+        ),
+      );
+
+      expect(result.monthDetected, isFalse);
+      expect(result.warnings, isNotEmpty);
+      // Les jours sont tout de même lus (31 par sécurité)
+      expect(result.agentShifts['DUPONT'], [1, 5]);
+    });
+
+    test('accepte un mois forcé par l\'utilisateur', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(monthTitle: '', rows: [_row('DUPONT')]),
+        forcedYear: 2026,
+        forcedMonth: 10,
+      );
+
+      expect(result.monthDetected, isTrue);
+      expect(result.month, 10);
+      expect(result.totalDays, 31);
+    });
+
+    test('ne prend pas une ligne de continuation pour un nouvel agent', () {
+      // 2 cellules puis 28 cellules sur la ligne suivante
+      final continuation = _row('X', days: 28, codes: {3: 'N', 7: 'N'});
+      final cells = continuation.split(' ').skip(1).join(' ');
+
+      final result = PdfParserService.parsePlanningText(
+        _planning(
+          rows: [
+            'DUPONT N R',
+            cells,
+            _row('MARTIN'),
+          ],
+        ),
+      );
+
+      expect(result.tokenCounts['DUPONT'], 30,
+          reason: 'tokens = ${result.tokenCounts}');
+      expect(result.agentShifts['DUPONT'], [1, 5, 9]);
+      expect(result.agentShifts.length, 2);
+    });
+
+    test('lit les codes F EXT collés ou espacés', () {
+      final result = PdfParserService.parsePlanningText(
+        _planning(
+          rows: [
+            _row('DUPONT', codes: {1: 'F EXT', 2: 'N', 5: 'N', 8: 'N'}),
+            _row('MARTIN', codes: {1: 'FEXT', 2: 'N', 5: 'N', 8: 'N'}),
+          ],
+        ),
+      );
+
+      expect(result.agentShifts['DUPONT'], [2, 5, 8]);
+      expect(result.agentShifts['MARTIN'], [2, 5, 8]);
+      expect(result.warnings, isEmpty, reason: 'warnings = ${result.warnings}');
+    });
   });
 }

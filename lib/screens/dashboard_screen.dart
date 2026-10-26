@@ -16,7 +16,6 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final configAsync = ref.watch(userConfigProvider);
     final shiftsAsync = ref.watch(allNightShiftsProvider);
     final membersAsync = ref.watch(teamMembersProvider);
@@ -71,7 +70,7 @@ class DashboardScreen extends ConsumerWidget {
                     AppSpacing.md,
                     0,
                   ),
-                  child: _Header(config: config, nightToday: nightToday.isNotEmpty),
+                  child: _Header(config: config, tonight: nightToday.isNotEmpty),
                 ),
               ),
               SliverToBoxAdapter(

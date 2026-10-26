@@ -397,7 +397,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.person_switch_outlined),
+            leading: const Icon(Icons.switch_account_outlined),
             title: const Text('Changer de profil'),
             subtitle: const Text('Choisir un autre agent de l\'équipe'),
             trailing: const Icon(Icons.chevron_right_rounded),

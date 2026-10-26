@@ -159,6 +159,8 @@ class NotificationService {
         when,
         notificationDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
       );
     } on Object catch (e) {
       // Repli si les alarmes exactes ne sont pas autorisées par le système.
@@ -171,6 +173,8 @@ class NotificationService {
           when,
           notificationDetails,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
         );
       } on Object catch (e2) {
         debugPrint('Notification $notificationId non programmée : $e2');

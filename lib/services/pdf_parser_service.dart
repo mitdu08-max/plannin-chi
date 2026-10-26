@@ -193,8 +193,9 @@ class PdfParserService {
       final genericMatch = _matchUnknownAgent(cleanLine);
       if (genericMatch != null) {
         currentAgent = genericMatch.key;
-        agentRawTokens.putIfAbsent(currentAgent, () => [])
-          ..addAll(genericMatch.value);
+        agentRawTokens
+            .putIfAbsent(currentAgent, () => [])
+            .addAll(genericMatch.value);
         continue;
       }
 

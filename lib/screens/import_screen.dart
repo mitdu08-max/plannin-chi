@@ -432,17 +432,17 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     try {
       setProcessing(true, 'Sélection du fichier PDF...');
 
-      final result = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
       );
 
-      if (result == null || result.files.isEmpty) {
+      if (files.isEmpty) {
         setProcessing(false, '');
         return;
       }
 
-      final path = result.files.first.path;
+      final path = files.first.path;
       if (path == null) {
         setProcessing(false, '');
         _showErrorSnackBar('Fichier inaccessible (chemin introuvable).');
@@ -1044,6 +1044,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       ref.invalidate(userConfigProvider);
       // Écran poussé depuis le tableau de bord : on revient en arrière.
       // Premier lancement (écran racine) : on renvoie vers l'accueil.
+      if (!mounted) return;
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       } else {

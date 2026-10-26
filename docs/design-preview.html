@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning CHI — aperçu du design « Aurora »</title>
+<style>
+  :root{
+    --night-bg:#070B14; --night-surface:#101827; --night-high:#16213A; --night-outline:#25314B;
+    --night-text:#E9EFFB; --night-muted:#93A4C3;
+    --primary:#7C8CFF; --secondary:#37D9C0; --tertiary:#FFB454;
+    --shift-a:#6C5CFF; --shift-b:#3E8BFF; --vac-a:#12B886; --vac-b:#37D9C0;
+    --rest:#64748B; --danger:#F2555A; --success:#2FBF71; --warning:#F5A524;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#0A0E18; color:var(--night-text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    padding:32px 20px 64px; line-height:1.45;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px}
+  .sub{color:var(--night-muted);font-size:13.5px;margin-bottom:28px}
+  h2{font-size:13px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--night-muted);margin:34px 0 14px}
+  .row{display:flex;gap:26px;flex-wrap:wrap;justify-content:center}
+
+  /* téléphone */
+  .phone{
+    width:322px;border-radius:36px;padding:12px;background:#000;
+    border:1px solid #202a3f;box-shadow:0 30px 70px rgba(0,0,0,.55);flex:0 0 auto;
+  }
+  .screen{
+    position:relative;border-radius:26px;overflow:hidden;background:var(--night-bg);
+    min-height:660px;padding:14px 14px 0;
+  }
+  .screen.light{background:#F4F6FC;color:#111A2C}
+  .halo{position:absolute;border-radius:50%;filter:blur(38px);pointer-events:none}
+  .halo.a{width:260px;height:260px;background:rgba(108,92,255,.30);top:-90px;left:-70px}
+  .halo.b{width:260px;height:260px;background:rgba(18,184,134,.20);top:150px;right:-110px}
+  .screen>*{position:relative;z-index:1}
+
+  .hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .hdr .date{font-size:11.5px;font-weight:700;letter-spacing:.02em;color:var(--night-muted);text-transform:capitalize}
+  .hdr .hello{font-size:20px;font-weight:700;letter-spacing:-.4px;margin-top:2px}
+  .screen.light .hdr .date{color:#5E6E8A}
+  .avatar{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:16px;color:#fff;
+    background:linear-gradient(135deg,#6C5CFF,#3E8BFF);border:1px solid rgba(255,255,255,.22)}
+
+  .card{background:var(--night-surface);border:1px solid var(--night-outline);border-radius:22px;padding:14px}
+  .screen.light .card{background:#fff;border-color:#E1E7F3;box-shadow:0 8px 20px rgba(17,26,44,.05)}
+
+  .next{
+    border:none;color:#fff;border-radius:22px;padding:18px;
+    background:linear-gradient(135deg,#6C5CFF 0%,#3E8BFF 100%);
+    box-shadow:0 16px 34px rgba(62,139,255,.34);
+  }
+  .chip-count{display:inline-block;background:rgba(255,255,255,.18);border-radius:99px;padding:5px 10px;
+    font-size:10.5px;font-weight:800;letter-spacing:.09em}
+  .next .label{font-size:12px;font-weight:600;opacity:.86;margin-top:14px}
+  .next .big{font-size:23px;font-weight:800;letter-spacing:-.5px;text-transform:capitalize}
+  .next .meta{display:flex;gap:8px;margin-top:12px}
+  .next .meta span{background:rgba(255,255,255,.16);border-radius:10px;padding:6px 10px;font-size:12.5px;font-weight:700;
+    display:inline-flex;align-items:center;gap:5px}
+  .next hr{border:none;border-top:1px solid rgba(255,255,255,.22);margin:13px 0}
+  .crew{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+  .stack{display:flex}
+  .stack .avatar{width:30px;height:30px;font-size:12px;margin-left:-8px;border:2px solid rgba(255,255,255,.9)}
+  .stack .avatar:first-child{margin-left:0}
+  .stack .avatar{background:rgba(255,255,255,.9);color:#3E8BFF}
+
+  .week{display:flex;justify-content:space-between;margin-top:12px}
+  .day{flex:1;text-align:center}
+  .day .dn{font-size:10px;font-weight:700;color:var(--night-muted);letter-spacing:.03em}
+  .screen.light .day .dn{color:#5E6E8A}
+  .day .cell{margin:6px auto 0;width:34px;height:40px;border-radius:12px;display:grid;place-items:center;
+    font-weight:700;font-size:14px;position:relative}
+  .day.today .cell{border:1.5px solid var(--primary)}
+  .day .dot{width:5px;height:5px;border-radius:50%;background:var(--shift-b);position:absolute;bottom:5px}
+  .day .dot.vac{background:var(--vac-a)}
+  .day.worked .cell{background:rgba(62,139,255,.15)}
+
+  .metrics{display:flex;gap:10px;margin-top:12px}
+  .metric{flex:1;background:var(--night-surface);border:1px solid var(--night-outline);border-radius:18px;padding:11px}
+  .screen.light .metric{background:#fff;border-color:#E1E7F3}
+  .metric .ico{width:27px;height:27px;border-radius:9px;display:grid;place-items:center;font-size:13px;margin-bottom:10px}
+  .metric .val{font-size:20px;font-weight:800;letter-spacing:-.3px}
+  .metric .lab{font-size:10.5px;color:var(--night-muted);margin-top:1px}
+  .screen.light .metric .lab{color:#5E6E8A}
+
+  .actions{display:flex;gap:10px;margin-top:14px}
+  .btn{flex:1;height:46px;border-radius:18px;display:grid;place-items:center;font-size:13.5px;font-weight:700}
+  .btn.primary{background:linear-gradient(135deg,#6C5CFF,#3E8BFF,#37D9C0);color:#fff;
+    box-shadow:0 10px 22px rgba(108,92,255,.35)}
+  .btn.ghost{border:1.4px solid var(--night-outline);color:var(--night-text)}
+  .screen.light .btn.ghost{border-color:#E1E7F3;color:#111A2C}
+
+  .list{margin-top:16px;display:flex;flex-direction:column;gap:7px}
+  .item{display:flex;align-items:center;gap:11px;background:var(--night-surface);border:1px solid var(--night-outline);
+    border-radius:18px;padding:9px 12px}
+  .screen.light .item{background:#fff;border-color:#E1E7F3}
+  .sq{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;font-weight:800;font-size:16px;color:#fff;
+    background:linear-gradient(135deg,#6C5CFF,#3E8BFF);flex:0 0 auto}
+  .item .t{font-size:13px;font-weight:700;text-transform:capitalize}
+  .item .s{font-size:11px;color:var(--night-muted)}
+  .screen.light .item .s{color:#5E6E8A}
+  .pill{margin-left:auto;background:rgba(18,184,134,.14);color:var(--vac-a);border:1px solid rgba(18,184,134,.45);
+    border-radius:99px;padding:4px 9px;font-size:10.5px;font-weight:800;white-space:nowrap}
+
+  .navbar{position:absolute;left:0;right:0;bottom:0;height:66px;display:flex;
+    background:var(--night-surface);border-top:1px solid var(--night-outline);z-index:2}
+  .screen.light .navbar{background:#fff;border-top-color:#E1E7F3}
+  .nav{flex:1;display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--night-muted);gap:3px}
+  .screen.light .nav{color:#5E6E8A}
+  .nav.on{color:var(--primary);font-weight:800}
+  .nav .g{font-size:17px}
+
+  /* calendrier */
+  .calcard{padding:12px 8px}
+  .calhead{display:flex;align-items:center;justify-content:space-between;padding:0 6px 10px;font-weight:700;font-size:14px;text-transform:capitalize}
+  .calhead .fmt{font-size:11px;font-weight:700;color:var(--primary);background:rgba(124,140,255,.16);border-radius:9px;padding:4px 8px}
+  .dow{display:grid;grid-template-columns:repeat(7,1fr);font-size:10px;font-weight:700;color:var(--night-muted);text-align:center;margin-bottom:5px}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:12.5px;font-weight:600}
+  .grid div{height:31px;display:grid;place-items:center;border-radius:10px;margin:1.5px}
+  .grid .nuit{background:linear-gradient(135deg,#6C5CFF,#3E8BFF);color:#fff;font-weight:700}
+  .grid .vac{background:linear-gradient(135deg,#12B886,#37D9C0);color:#fff;font-weight:700}
+  .grid .today{border:1.5px solid var(--primary);color:var(--primary)}
+  .grid .sel{background:linear-gradient(135deg,#6C5CFF,#3E8BFF,#37D9C0);color:#fff;box-shadow:0 6px 14px rgba(108,92,255,.45)}
+  .grid .dim{color:#56617a}
+  .legend{display:flex;gap:14px;margin:12px 2px 0;font-size:11px;color:var(--night-muted)}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+
+  .detailbar{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+  .detailbar .d{font-size:14px;font-weight:700;text-transform:capitalize}
+  .badge{background:rgba(62,139,255,.18);border:1px solid rgba(62,139,255,.5);color:#9fc0ff;
+    border-radius:99px;padding:4px 10px;font-size:11px;font-weight:800}
+  .hours{display:flex;align-items:center;gap:10px;margin-top:11px;background:rgba(62,139,255,.10);
+    border:1px solid rgba(62,139,255,.30);border-radius:16px;padding:11px}
+  .hours .h{font-weight:800;font-size:14px}
+  .hours .dur{margin-left:auto;background:rgba(255,255,255,.07);border-radius:9px;padding:3px 8px;font-size:11px;font-weight:700}
+  .sub2{font-size:11px;font-weight:700;color:var(--night-muted);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 8px}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chips span{background:rgba(255,255,255,.07);border:1px solid var(--night-outline);border-radius:13px;
+    padding:6px 10px;font-size:11.5px;font-weight:700}
+
+  /* palette */
+  .pal{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+  .sw{border-radius:14px;padding:12px;font-size:11px;font-weight:700;border:1px solid rgba(255,255,255,.08)}
+  .sw small{display:block;font-weight:500;opacity:.75;font-size:10px;margin-top:2px}
+  .note{color:var(--night-muted);font-size:12.5px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Planning CHI — design « Aurora »</h1>
+  <p class="sub">Aperçu statique (HTML) du nouveau design. Les écrans réels sont en Flutter :<br>
+  <code>lib/screens/dashboard_screen.dart</code>, <code>calendar_screen.dart</code>, <code>theme/app_theme.dart</code>.</p>
+
+  <div class="row">
+    <!-- ============ ACCUEIL ============ -->
+    <div class="phone"><div class="screen">
+      <div class="halo a"></div><div class="halo b"></div>
+
+      <div class="hdr">
+        <div>
+          <div class="date">Dimanche 26 octobre</div>
+          <div class="hello">Bonne garde ce soir 🌙</div>
+        </div>
+        <div class="avatar">T</div>
+      </div>
+
+      <div class="next">
+        <span class="chip-count">CE SOIR</span>
+        <div class="label">Prochaine garde</div>
+        <div class="big">Dimanche 26 octobre</div>
+        <div class="meta">
+          <span>🕘 19:00 – 07:00</span><span>⏱ 12h</span>
+        </div>
+        <hr>
+        <div class="crew">
+          <div class="stack"><div class="avatar">M</div><div class="avatar">L</div><div class="avatar">S</div></div>
+          Avec Marc +2
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--night-muted)">LES 7 PROCHAINS JOURS</div>
+        <div class="week">
+          <div class="day worked"><div class="dn">D</div><div class="cell">26<span class="dot"></span></div></div>
+          <div class="day"><div class="dn">L</div><div class="cell">27</div></div>
+          <div class="day"><div class="dn">M</div><div class="cell">28<span class="dot vac"></span></div></div>
+          <div class="day worked"><div class="dn">M</div><div class="cell">29<span class="dot"></span></div></div>
+          <div class="day"><div class="dn">J</div><div class="cell">30</div></div>
+          <div class="day worked"><div class="dn">V</div><div class="cell">31<span class="dot"></span></div></div>
+          <div class="day today"><div class="dn">S</div><div class="cell">1</div></div>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="ico" style="background:rgba(62,139,255,.16);color:#6aa8ff">🌙</div>
+          <div class="val">11</div><div class="lab">nuits ce mois</div>
+        </div>
+        <div class="metric">
+          <div class="ico" style="background:rgba(255,180,84,.16);color:#FFB454">⏱</div>
+          <div class="val">132h</div><div class="lab">heures cumulées</div>
+        </div>
+        <div class="metric">
+          <div class="ico" style="background:rgba(18,184,134,.16);color:#37D9C0">🏖</div>
+          <div class="val">2</div><div class="lab">week-ends</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="btn primary">↑ Importer</div>
+        <div class="btn ghost">Mes stats</div>
+      </div>
+
+      <div class="list">
+        <div class="item">
+          <div class="sq">29</div>
+          <div><div class="t">mercredi 29 octobre</div><div class="s">19:00 – 07:00 · 12h</div></div>
+          <div class="pill">3 collègues</div>
+        </div>
+        <div class="item">
+          <div class="sq">31</div>
+          <div><div class="t">vendredi 31 octobre</div><div class="s">19:00 – 07:00 · 12h</div></div>
+          <div class="pill">1 collègue</div>
+        </div>
+      </div>
+
+      <div class="navbar">
+        <div class="nav on"><span class="g">▦</span>Accueil</div>
+        <div class="nav"><span class="g">▤</span>Calendrier</div>
+        <div class="nav"><span class="g">◔</span>Stats</div>
+        <div class="nav"><span class="g">⚙</span>Réglages</div>
+      </div>
+    </div></div>
+
+    <!-- ============ CALENDRIER ============ -->
+    <div class="phone"><div class="screen">
+      <div class="halo a"></div><div class="halo b"></div>
+
+      <div class="hdr" style="margin-bottom:10px">
+        <div class="hello" style="font-size:20px">Calendrier</div>
+        <div class="avatar" style="width:34px;height:34px;font-size:13px">▤</div>
+      </div>
+
+      <div class="card calcard">
+        <div class="calhead"><span>‹</span><span>Octobre 2026</span><span class="fmt">Mois</span></div>
+        <div class="dow"><div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div></div>
+        <div class="grid">
+          <div class="dim"></div><div class="dim"></div><div class="dim"></div><div>1</div><div>2</div><div>3</div><div>4</div>
+          <div>5</div><div>6</div><div>7</div><div class="nuit">8</div><div>9</div><div>10</div><div>11</div>
+          <div>12</div><div>13</div><div>14</div><div>15</div><div class="nuit">16</div><div>17</div><div>18</div>
+          <div>19</div><div>20</div><div>21</div><div>22</div><div>23</div><div class="vac">24</div><div class="vac">25</div>
+          <div class="sel">26</div><div>27</div><div>28</div><div>29</div><div>30</div><div>31</div><div class="dim"></div>
+        </div>
+        <div class="legend">
+          <span><i style="background:#3E8BFF"></i>Nuit</span>
+          <span><i style="background:#12B886"></i>Congés</span>
+          <span><i style="background:#64748B"></i>Repos</span>
+        </div>
+      </div>
+
+      <div class="detailbar">
+        <div class="d">Dimanche 26 octobre</div>
+        <div class="badge">🌙 Nuit de garde</div>
+      </div>
+
+      <div class="card" style="margin-top:10px">
+        <div class="hours">
+          <span>🌙</span><span class="h">19:00 — 07:00</span><span class="dur">12h</span>
+        </div>
+        <div class="sub2">Équipe en poste ce soir</div>
+        <div class="chips"><span>Marc</span><span>Léa</span><span>Sophie</span></div>
+        <div class="actions" style="margin-top:14px">
+          <div class="btn ghost" style="height:40px">Modifier</div>
+          <div class="btn" style="height:40px;background:rgba(242,85,90,.16);color:#F2555A;border:1px solid rgba(242,85,90,.5)">Supprimer</div>
+        </div>
+      </div>
+
+      <div class="navbar">
+        <div class="nav"><span class="g">▦</span>Accueil</div>
+        <div class="nav on"><span class="g">▤</span>Calendrier</div>
+        <div class="nav"><span class="g">◔</span>Stats</div>
+        <div class="nav"><span class="g">⚙</span>Réglages</div>
+      </div>
+    </div></div>
+
+    <!-- ============ MODE JOUR ============ -->
+    <div class="phone"><div class="screen light">
+      <div class="halo a" style="background:rgba(61,91,224,.10)"></div>
+      <div class="halo b" style="background:rgba(15,158,138,.08)"></div>
+
+      <div class="hdr">
+        <div>
+          <div class="date">Réglages · apparence</div>
+          <div class="hello">Personnalisez</div>
+        </div>
+        <div class="avatar" style="background:linear-gradient(135deg,#3D5BE0,#0F9E8A)">T</div>
+      </div>
+
+      <div class="card">
+        <div style="font-size:12px;color:#5E6E8A">Le mode nuit réduit la luminosité pour les gardes.</div>
+        <div style="display:flex;gap:10px;margin-top:12px">
+          <div style="flex:1;border:1px solid #E1E7F3;border-radius:16px;padding:12px;text-align:center;font-size:12px;font-weight:600">
+            🌙<div style="margin-top:5px">Nuit</div></div>
+          <div style="flex:1;border:1.6px solid #3D5BE0;background:rgba(61,91,224,.10);border-radius:16px;padding:12px;text-align:center;font-size:12px;font-weight:800;color:#3D5BE0">
+            ☀<div style="margin-top:5px">Jour</div></div>
+          <div style="flex:1;border:1px solid #E1E7F3;border-radius:16px;padding:12px;text-align:center;font-size:12px;font-weight:600">
+            ◐<div style="margin-top:5px">Auto</div></div>
+        </div>
+      </div>
+
+      <div class="metrics" style="margin-top:14px">
+        <div class="metric">
+          <div class="ico" style="background:rgba(61,91,224,.12);color:#3D5BE0">🌙</div>
+          <div class="val">11</div><div class="lab">nuits ce mois</div>
+        </div>
+        <div class="metric">
+          <div class="ico" style="background:rgba(224,138,0,.12);color:#E08A00">⏱</div>
+          <div class="val">132h</div><div class="lab">heures</div>
+        </div>
+        <div class="metric">
+          <div class="ico" style="background:rgba(15,158,138,.12);color:#0F9E8A">🏖</div>
+          <div class="val">2</div><div class="lab">week-ends</div>
+        </div>
+      </div>
+
+      <div class="item" style="margin-top:14px">
+        <div class="sq" style="background:linear-gradient(135deg,#3D5BE0,#0F9E8A)">26</div>
+        <div><div class="t">Dimanche 26 octobre</div><div class="s">19:00 – 07:00 · 12h</div></div>
+        <div class="pill" style="background:rgba(15,158,138,.12);color:#0F9E8A;border-color:rgba(15,158,138,.4)">3 collègues</div>
+      </div>
+
+      <div class="actions" style="margin-top:14px">
+        <div class="btn primary" style="background:linear-gradient(135deg,#3D5BE0,#0F9E8A)">↑ Importer</div>
+        <div class="btn ghost">Mes stats</div>
+      </div>
+
+      <div class="navbar">
+        <div class="nav on"><span class="g">▦</span>Accueil</div>
+        <div class="nav"><span class="g">▤</span>Calendrier</div>
+        <div class="nav"><span class="g">◔</span>Stats</div>
+        <div class="nav"><span class="g">⚙</span>Réglages</div>
+      </div>
+    </div></div>
+  </div>
+
+  <h2>Palette</h2>
+  <div class="pal">
+    <div class="sw" style="background:#070B14">Fond nuit<small>#070B14</small></div>
+    <div class="sw" style="background:#101827">Surface<small>#101827</small></div>
+    <div class="sw" style="background:#16213A">Surface haute<small>#16213A</small></div>
+    <div class="sw" style="background:linear-gradient(135deg,#6C5CFF,#3E8BFF);color:#fff">Garde<small>#6C5CFF → #3E8BFF</small></div>
+    <div class="sw" style="background:linear-gradient(135deg,#12B886,#37D9C0);color:#fff">Congés<small>#12B886 → #37D9C0</small></div>
+    <div class="sw" style="background:#7C8CFF;color:#0A1020">Primaire<small>#7C8CFF</small></div>
+    <div class="sw" style="background:#FFB454;color:#231603">Tertiaire<small>#FFB454</small></div>
+    <div class="sw" style="background:#F2555A;color:#fff">Erreur<small>#F2555A</small></div>
+  </div>
+  <p class="note">Ces maquettes reprennent les jetons exacts de <code>lib/theme/app_theme.dart</code>
+  (couleurs, rayons 18/22, espacements 6/12/16/24) : elles servent à valider la direction,
+  l'application elle-même est en Flutter.</p>
+</div>
+</body>
+</html>

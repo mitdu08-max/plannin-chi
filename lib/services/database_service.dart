@@ -1,6 +1,7 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
+import 'seed_data_service.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -45,6 +46,9 @@ class DatabaseService {
     _userConfigBox = await Hive.openBox<UserConfig>(_userConfigBoxName);
 
     _isInitialized = true;
+
+    // Enrichit avec l'équipe complète si seulement un agent est présent
+    await SeedDataService.seedTeamShiftsIfNeeded(this);
   }
 
   // Team Members

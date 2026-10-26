@@ -678,6 +678,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       year: year,
       month: month,
       userVacations: userVacations,
+      allAgentShifts: result.agentShifts,
+      allAgentVacations: result.agentVacations,
     );
   }
 
@@ -964,6 +966,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     required int year,
     required int month,
     required Map<int, String> userVacations,
+    Map<String, List<int>>? allAgentShifts,
+    Map<String, Map<int, String>>? allAgentVacations,
   }) async {
     setProcessing(true, 'Enregistrement en base...');
 
@@ -976,47 +980,98 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       final currentUser =
           allTeamMembers.firstWhere((m) => m.trigramme == currentAgent);
 
-      // 2. Import idempotent : on purge le mois avant de le réécrire, sinon
-      // une garde retirée du nouveau planning restait indéfiniment en base.
-      final deleted =
-          await db.deleteNightShiftsForMonth(currentUser.id, year, month);
+      var deleted = 0;
 
-      // 3. Gardes du mois
-      for (final item in previewItems) {
-        final shift = NightShift(
-          id: '${currentUser.id}_${year}_${month}_${item.date.day}',
-          date: item.date,
-          agentId: currentUser.id,
-          agentTrigramme: currentAgent,
-          startTime: shiftStartTime,
-          endTime: shiftEndTime,
-          isWorking: true,
-          coWorkerIds: item.coWorkers.map((c) => c.id).toList(),
-          isManualOverride: false,
-        );
-        await db.saveNightShift(shift);
-      }
+      // 2. Import des gardes et congés pour TOUS les agents
+      if (allAgentShifts != null && allAgentShifts.isNotEmpty) {
+        for (final entry in allAgentShifts.entries) {
+          final agentId = entry.key;
+          final agentDays = entry.value;
+          final isCurrent = agentId == currentAgent || agentId == currentUser.id;
+          final vacations = allAgentVacations?[agentId] ?? (isCurrent ? userVacations : const <int, String>{});
 
-      // 4. Congés : uniquement les jours qui ne sont pas déjà une garde
-      final workingDays = previewItems.map((item) => item.date.day).toSet();
-      for (final entry in userVacations.entries) {
-        final day = entry.key;
-        if (workingDays.contains(day)) continue;
+          final count = await db.deleteNightShiftsForMonth(agentId, year, month);
+          if (isCurrent) deleted = count;
 
-        await db.saveNightShift(
-          NightShift(
-            id: '${currentUser.id}_${year}_${month}_$day',
-            date: DateTime(year, month, day),
+          for (final day in agentDays) {
+            final date = DateTime(year, month, day);
+            final coWorkerIds = allAgentShifts.entries
+                .where((e) => e.key != agentId && e.value.contains(day))
+                .map((e) => e.key)
+                .toList();
+
+            final shift = NightShift(
+              id: '${agentId}_${year}_${month}_$day',
+              date: date,
+              agentId: agentId,
+              agentTrigramme: agentId,
+              startTime: shiftStartTime,
+              endTime: shiftEndTime,
+              isWorking: true,
+              coWorkerIds: coWorkerIds,
+              isManualOverride: false,
+            );
+            await db.saveNightShift(shift);
+          }
+
+          for (final vacEntry in vacations.entries) {
+            final day = vacEntry.key;
+            if (agentDays.contains(day)) continue;
+
+            final shift = NightShift(
+              id: '${agentId}_${year}_${month}_$day',
+              date: DateTime(year, month, day),
+              agentId: agentId,
+              agentTrigramme: agentId,
+              startTime: shiftStartTime,
+              endTime: shiftEndTime,
+              isWorking: false,
+              isVacation: true,
+              vacationType: vacEntry.value,
+              coWorkerIds: const [],
+            );
+            await db.saveNightShift(shift);
+          }
+        }
+      } else {
+        // Fallback: sauvegarder au moins currentUser
+        deleted = await db.deleteNightShiftsForMonth(currentUser.id, year, month);
+
+        for (final item in previewItems) {
+          final shift = NightShift(
+            id: '${currentUser.id}_${year}_${month}_${item.date.day}',
+            date: item.date,
             agentId: currentUser.id,
             agentTrigramme: currentAgent,
             startTime: shiftStartTime,
             endTime: shiftEndTime,
-            isWorking: false,
-            isVacation: true,
-            vacationType: entry.value,
-            coWorkerIds: const [],
-          ),
-        );
+            isWorking: true,
+            coWorkerIds: item.coWorkers.map((c) => c.id).toList(),
+            isManualOverride: false,
+          );
+          await db.saveNightShift(shift);
+        }
+
+        final workingDays = previewItems.map((item) => item.date.day).toSet();
+        for (final entry in userVacations.entries) {
+          final day = entry.key;
+          if (workingDays.contains(day)) continue;
+
+          await db.saveNightShift(
+            NightShift(
+              id: '${currentUser.id}_${year}_${month}_$day',
+              date: DateTime(year, month, day),
+              agentId: currentUser.id,
+              agentTrigramme: currentAgent,
+              startTime: shiftStartTime,
+              endTime: shiftEndTime,
+              isWorking: false,
+              isVacation: true,
+              vacationType: entry.value,
+              coWorkerIds: const [],
+            ),
+          );
+        }
       }
 
       // 5. Configuration utilisateur (identité stable : l'id de l'agent)

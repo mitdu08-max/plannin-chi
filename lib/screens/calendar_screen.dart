@@ -102,7 +102,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     child: const StatusLegend(),
                   ),
                   const SizedBox(height: 12),
-                  _buildDayDetails(theme, shiftsMap, userConfig, teamMembers),
+                  _buildDayDetails(theme, shiftsMap, userConfig, teamMembers, allShifts),
                 ],
               );
             },
@@ -320,7 +320,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildDayDetails(ThemeData theme, Map<DateTime, NightShift> shiftsMap, UserConfig userConfig, List<TeamMember> teamMembers) {
+  Widget _buildDayDetails(
+    ThemeData theme,
+    Map<DateTime, NightShift> shiftsMap,
+    UserConfig userConfig,
+    List<TeamMember> teamMembers,
+    List<NightShift> allShifts,
+  ) {
     if (_selectedDay == null) {
       return const SizedBox.shrink();
     }
@@ -349,6 +355,51 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final String badgeText = isWorking
         ? 'Nuit de garde'
         : (isVacation ? 'Congés ($vacationType)' : 'Repos');
+
+    // Gardes de l'équipe pour cette date
+    final onDutyShifts = allShifts.where((s) =>
+        s.isWorking &&
+        s.date.year == dateKey.year &&
+        s.date.month == dateKey.month &&
+        s.date.day == dateKey.day
+    ).toList();
+
+    // Identifier qui travaille cette nuit-là
+    final List<String> colleagueIds;
+    if (isWorking) {
+      if (shift.coWorkerIds.isNotEmpty) {
+        colleagueIds = shift.coWorkerIds;
+      } else {
+        colleagueIds = onDutyShifts
+            .where((s) =>
+                s.agentId != userConfig.userId &&
+                s.agentTrigramme.toUpperCase() != userConfig.userTrigramme.toUpperCase() &&
+                s.agentTrigramme.toUpperCase() != userConfig.userName.toUpperCase())
+            .map((s) => s.agentId)
+            .toList();
+      }
+    } else {
+      // Repos ou congés : on affiche toute l'équipe en poste ce soir
+      colleagueIds = onDutyShifts
+          .where((s) =>
+              s.agentId != userConfig.userId &&
+              s.agentTrigramme.toUpperCase() != userConfig.userTrigramme.toUpperCase() &&
+              s.agentTrigramme.toUpperCase() != userConfig.userName.toUpperCase())
+          .map((s) => s.agentId)
+          .toList();
+    }
+
+    final onDutyMembers = colleagueIds.map((id) {
+      return teamMembers.firstWhere(
+        (m) => m.id == id || m.trigramme == id,
+        orElse: () => TeamMember(
+          id: id,
+          firstName: id,
+          lastName: '',
+          trigramme: id,
+        ),
+      );
+    }).toList();
 
     return Expanded(
       child: Padding(
@@ -464,7 +515,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              'Journée de congés posée. Aucune garde de nuit programmée.',
+                              'Journée de congés posée. Tu ne travailles pas cette nuit.',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
@@ -523,56 +574,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 16),
-
-                      // Coworkers Section
-                      _buildSectionHeader(theme, 'Équipe en poste ce soir', Icons.groups_outlined),
-                      const SizedBox(height: 10),
-
-                      if (shift.coWorkerIds.isNotEmpty) ...[
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: shift.coWorkerIds.map((id) {
-                            final colleague = teamMembers.firstWhere(
-                              (m) => m.id == id,
-                              orElse: () => TeamMember(
-                                id: id,
-                                firstName: id,
-                                lastName: '',
-                                trigramme: id,
-                              ),
-                            );
-                            return _buildColleagueBadge(theme, colleague);
-                          }).toList(),
-                        ),
-                      ] else ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withValues(alpha: isDark ? 0.14 : 0.08),
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            border: Border.all(
-                              color: AppColors.warning.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.person_outline, color: AppColors.warning, size: 20),
-                              SizedBox(width: 10),
-                              Text(
-                                'Seul de garde cette nuit',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
                       if (shift.isManualOverride) ...[
                         const SizedBox(height: 12),
                         _buildDetailRow(
@@ -620,13 +621,63 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Aucune garde prévue pour cette date.',
+                                    'Aucune garde prévue pour toi cette date.',
                                     style: TextStyle(
                                       color: theme.colorScheme.onSurfaceVariant,
                                       fontSize: 13,
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 18),
+
+                    // Section Équipe en poste (toujours affichée, que l'on travaille ou pas !)
+                    _buildSectionHeader(
+                      theme,
+                      isWorking ? 'Équipe en poste avec toi' : 'Équipe de garde ce soir-là',
+                      Icons.groups_outlined,
+                    ),
+                    const SizedBox(height: 10),
+
+                    if (onDutyMembers.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: onDutyMembers.map((colleague) {
+                          return _buildColleagueBadge(theme, colleague);
+                        }).toList(),
+                      ),
+                    ] else ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(
+                            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isWorking ? Icons.person_outline : Icons.nightlight_outlined,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              isWorking ? 'Seul de garde cette nuit' : 'Aucune garde enregistrée pour l\'équipe cette nuit',
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
                               ),
                             ),
                           ],

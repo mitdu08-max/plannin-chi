@@ -6,6 +6,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'providers/providers.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_widgets.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,37 +53,60 @@ class NightShiftApp extends ConsumerWidget {
   }
 }
 
-/// Écran de démarrage : logo, dégradé, indicateur discret.
+/// Écran de démarrage : allumage du moniteur — noir, grille, logo néon.
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.aurora),
-        child: const Center(
+      body: NeonBackground(
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.nightlight_round, size: 64, color: Colors.white),
-              SizedBox(height: 18),
-              Text(
-                'Planning CHI',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
+              Container(
+                width: 84,
+                height: 84,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.neonCyan.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.neonCyan),
+                  boxShadow: AppColors.glow(AppColors.neonCyan, blur: 30, alpha: 0.35),
+                ),
+                child: const Icon(
+                  Icons.nightlight_round,
+                  size: 38,
+                  color: AppColors.neonLime,
                 ),
               ),
-              SizedBox(height: 24),
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.4,
-                  color: Colors.white,
+              const SizedBox(height: 22),
+              Text(
+                'PLANNING CHI',
+                style: AppFonts.tag(
+                  size: 13,
+                  color: AppColors.nightText,
+                  weight: FontWeight.w800,
+                  letterSpacing: 4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'INITIALISATION…',
+                style: AppFonts.tag(
+                  size: 9,
+                  color: AppColors.neonDim,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 26),
+              const SizedBox(
+                width: 132,
+                child: LinearProgressIndicator(
+                  minHeight: 2,
+                  color: AppColors.neonLime,
+                  backgroundColor: AppColors.neonLine,
                 ),
               ),
             ],

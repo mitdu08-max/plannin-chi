@@ -57,7 +57,7 @@ class DashboardScreen extends ConsumerWidget {
         s.date.day == today.day);
 
     return Scaffold(
-      body: AuroraBackground(
+      body: NeonBackground(
         child: SafeArea(
           bottom: false,
           child: CustomScrollView(
@@ -202,31 +202,45 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final now = DateTime.now();
-    final dateLabel = DateFormat('EEEE d MMMM', 'fr_FR').format(now);
+    final dateLabel = toTitleCase(DateFormat('EEEE d MMMM', 'fr_FR').format(now));
+    final name = config.userName.isEmpty ? config.userTrigramme : config.userName;
+    final lime = isDark ? AppColors.neonLime : AppColors.daySecondary;
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              TechLabel(dateLabel, size: 9.5, letterSpacing: 1.8),
+              const SizedBox(height: 7),
               Text(
-                toTitleCase(dateLabel),
-                style: theme.textTheme.titleSmall,
+                tonight ? 'Garde ce soir' : 'Bonjour $name',
+                style: theme.textTheme.displaySmall,
               ),
-              const SizedBox(height: 2),
-              Text(
-                tonight ? 'Bonne garde ce soir 🌙' : 'Bonjour ${config.userName.isEmpty ? config.userTrigramme : config.userName}',
-                style: theme.textTheme.headlineMedium,
-              ),
+              if (tonight) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const PulseDot(color: AppColors.neonLime),
+                    const SizedBox(width: 7),
+                    TechLabel(
+                      'En service cette nuit',
+                      size: 8.5,
+                      color: lime,
+                      letterSpacing: 1.2,
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
-        InitialsAvatar(
-          name: config.userName.isEmpty ? config.userTrigramme : config.userName,
-          size: 44,
-        ),
+        const SizedBox(width: AppSpacing.sm),
+        InitialsAvatar(name: name, size: 42),
       ],
     );
   }
@@ -246,7 +260,10 @@ class _NextShiftCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final shift = nextShift;
+    final primary = theme.colorScheme.primary;
+    final lime = isDark ? AppColors.neonLime : AppColors.daySecondary;
 
     if (shift == null) {
       return SurfaceCard(
@@ -256,13 +273,17 @@ class _NextShiftCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.check_circle_outline,
-                    color: AppColors.vacationStart, size: 20),
+                Icon(Icons.check_circle_outline, color: lime, size: 18),
                 const SizedBox(width: 8),
-                Text('Aucune garde à venir', style: theme.textTheme.titleMedium),
+                TechLabel(
+                  'Aucune garde à venir',
+                  size: 10,
+                  color: theme.colorScheme.onSurface,
+                  letterSpacing: 1.2,
+                ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               'Importez le planning du mois pour retrouver vos nuits et vos collègues.',
               style: theme.textTheme.bodySmall,
@@ -283,7 +304,7 @@ class _NextShiftCard extends StatelessWidget {
     final countdown = switch (daysUntil) {
       0 => 'Ce soir',
       1 => 'Demain',
-      _ => 'Dans $daysUntil jours',
+      _ => 'Dans $daysUntil j',
     };
 
     final dateLabel = toTitleCase(
@@ -291,142 +312,163 @@ class _NextShiftCard extends StatelessWidget {
     );
 
     return SurfaceCard(
-      gradient: AppColors.shiftGradient,
+      brackets: true,
       glow: true,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      borderColor: Colors.white.withValues(alpha: 0.18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.zero,
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          primary.withValues(alpha: isDark ? 0.13 : 0.07),
+          primary.withValues(alpha: isDark ? 0.02 : 0.01),
+        ],
+      ),
+      child: Stack(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TechLabel(
+                  'Prochaine garde',
+                  size: 9,
+                  color: primary,
+                  letterSpacing: 2.2,
                 ),
-                child: Text(
-                  countdown.toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Icon(Icons.nightlight_round,
-                  color: Colors.white.withValues(alpha: 0.9), size: 20),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Prochaine garde',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            dateLabel,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              _infoChip(
-                Icons.schedule_rounded,
-                '${_hhmm(shift.startTime)} – ${_hhmm(shift.endTime)}',
-              ),
-              const SizedBox(width: 8),
-              _infoChip(
-                Icons.timelapse_rounded,
-                '${shift.durationHours.toStringAsFixed(0)}h',
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Divider(color: Colors.white.withValues(alpha: 0.22), height: 1),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              if (coWorkers.isEmpty)
+                const SizedBox(height: 12),
                 Text(
-                  'Seul de garde',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    fontWeight: FontWeight.w600,
+                  dateLabel.toUpperCase(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.monoText(
+                    size: 15,
+                    weight: FontWeight.w800,
+                    color: theme.colorScheme.onSurface,
+                    letterSpacing: 0.4,
+                    height: 1.35,
                   ),
-                )
-              else ...[
-                SizedBox(
-                  width: (coWorkers.length.clamp(1, 4) * 22).toDouble() + 12,
-                  height: 32,
-                  child: Stack(
-                    children: [
-                      for (var i = 0; i < coWorkers.length.clamp(0, 4); i++)
-                        Positioned(
-                          left: i * 20.0,
-                          child: InitialsAvatar(
-                            name: coWorkers[i].firstName.isEmpty
-                                ? coWorkers[i].trigramme
-                                : coWorkers[i].firstName,
-                            size: 32,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _hhmm(shift.startTime),
+                      style: AppFonts.monoText(
+                        size: 34,
+                        weight: FontWeight.w800,
+                        color: lime,
+                        letterSpacing: -1.2,
+                        height: 1,
+                      ).copyWith(
+                        shadows: [
+                          Shadow(
+                            color: lime.withValues(alpha: 0.45),
+                            blurRadius: 20,
                           ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6, bottom: 4),
+                      child: Text(
+                        '→ ${_hhmm(shift.endTime)}',
+                        style: AppFonts.monoText(
+                          size: 13,
+                          weight: FontWeight.w700,
+                          color: theme.colorScheme.onSurfaceVariant,
+                          letterSpacing: 0.2,
                         ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${shift.durationHours.toStringAsFixed(0)}H',
+                      style: AppFonts.tag(
+                        size: 10,
+                        color: primary,
+                        weight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(height: 1, color: theme.colorScheme.outline),
+                const SizedBox(height: 11),
+                if (coWorkers.isEmpty)
+                  Row(
+                    children: [
+                      Icon(Icons.person_outline_rounded,
+                          size: 14, color: theme.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      TechLabel(
+                        'Seul de garde',
+                        size: 9,
+                        letterSpacing: 1.4,
+                      ),
+                    ],
+                  )
+                else
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final member in coWorkers.take(3))
+                        _crewTag(context, _firstName(member)),
+                      if (coWorkers.length > 3)
+                        _crewTag(context, '+${coWorkers.length - 3}'),
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    coWorkers.length == 1
-                        ? 'Avec ${_firstName(coWorkers.first)}'
-                        : 'Avec ${_firstName(coWorkers.first)} +${coWorkers.length - 1}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
               ],
-            ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: lime,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(AppRadius.sm),
+                ),
+              ),
+              child: Text(
+                countdown.toUpperCase(),
+                style: AppFonts.tag(
+                  size: 8.5,
+                  color: AppColors.neonInk,
+                  weight: FontWeight.w800,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _infoChip(IconData icon, String label) {
+  Widget _crewTag(BuildContext context, String label) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        color: primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: primary.withValues(alpha: 0.38)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: Colors.white),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+      child: Text(
+        label.toUpperCase(),
+        style: AppFonts.tag(
+          size: 9,
+          color: primary,
+          weight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
       ),
     );
   }
@@ -444,18 +486,25 @@ class _WeekStrip extends StatelessWidget {
     final days = List.generate(7, (i) => DateTime(now.year, now.month, now.day + i));
 
     return SurfaceCard(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.sm, AppSpacing.sm, AppSpacing.sm, AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-            child: Text('Les 7 prochains jours', style: theme.textTheme.titleSmall),
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Row(
+              children: [
+                Container(width: 5, height: 5, color: theme.colorScheme.secondary),
+                const SizedBox(width: 7),
+                TechLabel(
+                  '7 prochains jours',
+                  size: 9,
+                  color: theme.colorScheme.onSurface,
+                  letterSpacing: 1.8,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
               for (final day in days)
@@ -498,36 +547,39 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final isToday = _isSameDay(day, DateTime.now());
     final hasShift = shift.id != 'empty';
 
     final color = shift.isWorking
         ? AppColors.shiftEnd
         : (shift.isVacation ? AppColors.vacationStart : null);
+    final lime = isDark ? AppColors.neonLime : AppColors.daySecondary;
 
     return Column(
       children: [
-        Text(
-          DateFormat('E', 'fr_FR').format(day).substring(0, 1).toUpperCase(),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: isToday ? theme.colorScheme.primary : null,
-          ),
+        TechLabel(
+          DateFormat('E', 'fr_FR').format(day).substring(0, 1),
+          size: 8,
+          letterSpacing: 0.8,
+          color: isToday ? theme.colorScheme.primary : null,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         Container(
-          width: 34,
           height: 38,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: hasShift && color != null
-                ? color.withValues(alpha: 0.16)
+                ? color.withValues(alpha: 0.10)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(
               color: isToday
                   ? theme.colorScheme.primary
-                  : Colors.transparent,
-              width: 1.4,
+                  : (hasShift && color != null
+                      ? color.withValues(alpha: 0.35)
+                      : Colors.transparent),
             ),
           ),
           child: Column(
@@ -535,20 +587,21 @@ class _DayCell extends StatelessWidget {
             children: [
               Text(
                 '${day.day}',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: isToday ? FontWeight.w800 : FontWeight.w600,
+                style: AppFonts.monoText(
+                  size: 13,
+                  weight: FontWeight.w800,
+                  color: isToday ? lime : theme.colorScheme.onSurface,
+                  letterSpacing: -0.2,
                 ),
               ),
-              if (hasShift)
+              if (hasShift) ...[
+                const SizedBox(height: 3),
                 Container(
-                  margin: const EdgeInsets.only(top: 2),
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: color ?? Colors.transparent,
-                    shape: BoxShape.circle,
-                  ),
+                  width: 9,
+                  height: 2,
+                  color: color ?? Colors.transparent,
                 ),
+              ],
             ],
           ),
         ),
@@ -566,6 +619,8 @@ class _UpcomingList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final lime = isDark ? AppColors.neonLime : AppColors.daySecondary;
 
     if (shifts.isEmpty) {
       return SurfaceCard(
@@ -573,7 +628,7 @@ class _UpcomingList extends StatelessWidget {
         child: Row(
           children: [
             Icon(Icons.event_available_rounded,
-                color: theme.colorScheme.secondary, size: 20),
+                color: theme.colorScheme.primary, size: 18),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -589,57 +644,71 @@ class _UpcomingList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeader(title: 'À venir'),
+        SectionHeader(
+          title: 'À venir',
+          trailing: TechLabel(
+            '${shifts.length}',
+            size: 9,
+            color: lime,
+            letterSpacing: 1,
+          ),
+        ),
         for (final shift in shifts)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+            padding: const EdgeInsets.only(bottom: 6),
             child: SurfaceCard(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.sm,
-              ),
+              padding: EdgeInsets.zero,
               child: Row(
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.shiftGradient,
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                    ),
+                    width: 2,
+                    height: 56,
+                    color: AppColors.shiftEnd,
+                  ),
+                  const SizedBox(width: 11),
+                  SizedBox(
+                    width: 34,
                     child: Text(
-                      '${shift.date.day}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 17,
+                      '${shift.date.day}'.padLeft(2, '0'),
+                      textAlign: TextAlign.center,
+                      style: AppFonts.monoText(
+                        size: 18,
+                        weight: FontWeight.w800,
+                        color: lime,
+                        letterSpacing: -0.5,
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: 11),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           toTitleCase(
-                            DateFormat('EEEE d MMMM', 'fr_FR').format(shift.date),
+                            DateFormat('EEE d MMM', 'fr_FR').format(shift.date),
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleMedium,
                         ),
-                        Text(
-                          '${_hhmm(shift.startTime)} – ${_hhmm(shift.endTime)}  •  '
+                        const SizedBox(height: 2),
+                        TechLabel(
+                          '${_hhmm(shift.startTime)} → ${_hhmm(shift.endTime)} · '
                           '${shift.durationHours.toStringAsFixed(0)}h',
-                          style: theme.textTheme.bodySmall,
+                          size: 8.5,
+                          letterSpacing: 0.8,
                         ),
                       ],
                     ),
                   ),
-                  Pill(
-                    label: '${shift.coWorkerIds.length} collègue${shift.coWorkerIds.length > 1 ? 's' : ''}',
-                    color: AppColors.vacationStart,
-                    icon: Icons.groups_rounded,
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10, left: 6),
+                    child: Pill(
+                      label: '${shift.coWorkerIds.length}',
+                      color: AppColors.vacationStart,
+                      icon: Icons.groups_rounded,
+                    ),
                   ),
                 ],
               ),

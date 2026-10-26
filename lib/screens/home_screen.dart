@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_widgets.dart';
 import 'calendar_screen.dart';
 import 'dashboard_screen.dart';
 import 'import_screen.dart';
@@ -24,25 +25,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     SettingsScreen(),
   ];
 
-  static const List<NavigationDestination> _destinations = [
-    NavigationDestination(
-      icon: Icon(Icons.space_dashboard_outlined),
-      selectedIcon: Icon(Icons.space_dashboard_rounded),
+  static const List<NeonTab> _tabs = [
+    NeonTab(
+      icon: Icons.grid_view_outlined,
+      selectedIcon: Icons.grid_view_rounded,
       label: 'Accueil',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.calendar_month_outlined),
-      selectedIcon: Icon(Icons.calendar_month_rounded),
+    NeonTab(
+      icon: Icons.calendar_month_outlined,
+      selectedIcon: Icons.calendar_month_rounded,
       label: 'Calendrier',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.insights_outlined),
-      selectedIcon: Icon(Icons.insights_rounded),
+    NeonTab(
+      icon: Icons.insights_outlined,
+      selectedIcon: Icons.insights_rounded,
       label: 'Stats',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.tune_outlined),
-      selectedIcon: Icon(Icons.tune_rounded),
+    NeonTab(
+      icon: Icons.tune_outlined,
+      selectedIcon: Icons.tune_rounded,
       label: 'Réglages',
     ),
   ];
@@ -88,18 +89,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         return Scaffold(
           extendBody: true,
           body: IndexedStack(index: safeIndex, children: _screens),
-          bottomNavigationBar: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(color: Theme.of(context).colorScheme.outline),
-              ),
-            ),
-            child: NavigationBar(
-              selectedIndex: safeIndex,
-              onDestinationSelected: (value) =>
-                  ref.read(selectedTabProvider.notifier).state = value,
-              destinations: _destinations,
-            ),
+          bottomNavigationBar: NeonNavBar(
+            index: safeIndex,
+            onSelect: (value) =>
+                ref.read(selectedTabProvider.notifier).state = value,
+            tabs: _tabs,
           ),
         );
       },

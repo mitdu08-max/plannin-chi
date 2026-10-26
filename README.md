@@ -25,9 +25,16 @@ calendrier, statistiques et rappels avant chaque prise de poste.
 
 ## Design
 
-Interface « Aurora » : thème nuit/jour complet, cartes unifiées, typographie
-hiérarchisée, nouvel écran d'accueil. Palette, composants et écran par écran :
-[`DESIGN.md`](DESIGN.md).
+Interface « Nocturne néon » : noir absolu, grille de moniteur, cyan et lime,
+angles vifs et chiffres en monospace — pensée pour être lue la nuit, dans une
+salle éteinte. Thème nuit (défaut) et jour, navigation maison, écran d'accueil
+centré sur la prochaine garde.
+
+Palette, composants et détail écran par écran : [`DESIGN.md`](DESIGN.md).
+Aperçus statiques (HTML, sans compilation Flutter) :
+[`docs/design-neon.html`](docs/design-neon.html),
+[`docs/design-directions.html`](docs/design-directions.html) (les cinq
+directions explorées).
 
 ## Démarrage
 

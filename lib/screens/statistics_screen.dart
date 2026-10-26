@@ -53,7 +53,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           ),
         ],
       ),
-      body: AuroraBackground(
+      body: NeonBackground(
         child: nightShiftsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _buildErrorState(error),
@@ -260,11 +260,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            TechLabel(
               'Répartition par jour de la semaine',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              size: 9.5,
+              color: theme.colorScheme.onSurface,
+              letterSpacing: 1.8,
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -297,9 +297,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                             return Padding(
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
-                                weekdays[value.toInt()],
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w500,
+                                weekdays[value.toInt()].toUpperCase(),
+                                style: AppFonts.tag(
+                                  size: 8,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  letterSpacing: 0.6,
                                 ),
                               ),
                             );
@@ -318,8 +320,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           if (value == value.toInt()) {
                             return Text(
                               value.toInt().toString(),
-                              style: theme.textTheme.bodySmall?.copyWith(
+                              style: AppFonts.tag(
+                                size: 8.5,
                                 color: theme.colorScheme.onSurfaceVariant,
+                                letterSpacing: 0,
                               ),
                             );
                           }
@@ -358,9 +362,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                                     theme.colorScheme.secondary,
                                   ],
                           ),
-                          width: 22,
+                          width: 14,
                           borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(8),
+                            top: Radius.circular(2),
                           ),
                           backDrawRodData: BackgroundBarChartRodData(
                             show: true,
@@ -395,11 +399,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            TechLabel(
               'Analyse des week-ends',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              size: 9.5,
+              color: theme.colorScheme.onSurface,
+              letterSpacing: 1.8,
             ),
             const SizedBox(height: 20),
 
@@ -464,8 +468,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                   value: weekendAnalysis.workedPercentage / 100,
                   backgroundColor: theme.colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
-                  minHeight: 8,
-                  borderRadius: BorderRadius.circular(4),
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(1),
                 ),
               ],
             ),
@@ -483,30 +487,38 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     Color color,
   ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 28),
+          Icon(icon, color: color, size: 14),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: color,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: AppFonts.monoText(
+                size: 22,
+                weight: FontWeight.w800,
+                color: color,
+                letterSpacing: -0.6,
+              ),
             ),
           ),
           const SizedBox(height: 4),
           Text(
-            title,
-            style: theme.textTheme.bodySmall?.copyWith(
+            title.toUpperCase(),
+            maxLines: 2,
+            style: AppFonts.tag(
+              size: 7.5,
               color: theme.colorScheme.onSurfaceVariant,
+              letterSpacing: 0.8,
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -578,11 +590,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
+                TechLabel(
                   'Top collègues de garde',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  size: 9.5,
+                  color: theme.colorScheme.onSurface,
+                  letterSpacing: 1.8,
                 ),
                 Text(
                   _period == StatisticsPeriod.month
@@ -606,24 +618,27 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                   children: [
                     // Rank/Medal
                     Container(
-                      width: 40,
-                      height: 40,
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: _getMedalColor(index).withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
+                        color: _getMedalColor(index).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(
+                          color: _getMedalColor(index).withValues(alpha: 0.45),
+                        ),
                       ),
-                      child: Center(
-                        child: Text(
-                          medal,
-                          style: TextStyle(
-                            color: _getMedalColor(index),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
+                      child: Text(
+                        medal,
+                        style: AppFonts.monoText(
+                          size: 13,
+                          weight: FontWeight.w800,
+                          color: _getMedalColor(index),
+                          letterSpacing: 0,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
 
                     // Teammate info
                     Expanded(
@@ -648,21 +663,24 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
                     // Nights together count
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.nightlight_round, size: 16, color: theme.colorScheme.onPrimaryContainer),
+                          Icon(Icons.nightlight_round, size: 11, color: theme.colorScheme.primary),
                           const SizedBox(width: 4),
                           Text(
-                            '${stat.nightsTogether} garde(s)',
-                            style: TextStyle(
-                              color: theme.colorScheme.onPrimaryContainer,
-                              fontWeight: FontWeight.w600,
+                            '${stat.nightsTogether}',
+                            style: AppFonts.tag(
+                              size: 9,
+                              color: theme.colorScheme.primary,
+                              letterSpacing: 0.6,
                             ),
                           ),
                         ],
@@ -678,22 +696,17 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     );
   }
 
-  String _getMedal(int index) {
-    switch (index) {
-      case 0: return '🥇';
-      case 1: return '🥈';
-      case 2: return '🥉';
-      default: return '#${index + 1}';
-    }
-  }
+  String _getMedal(int index) => '${index + 1}'.padLeft(2, '0');
 
   Color _getMedalColor(int index) {
-    switch (index) {
-      case 0: return Colors.amber;
-      case 1: return Colors.grey.shade400;
-      case 2: return Colors.brown.shade300;
-      default: return Colors.blue;
-    }
+    const palette = [
+      AppColors.neonLime,
+      AppColors.neonCyan,
+      AppColors.neonAmber,
+      AppColors.neonMid,
+      AppColors.neonDim,
+    ];
+    return palette[index % palette.length];
   }
 
   Widget _buildErrorState(Object error) {
@@ -719,7 +732,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.person_off_outlined, size: 64, color: Colors.grey),
+          Icon(Icons.person_off_outlined, size: 64, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 16),
           const Text('Profil non configuré'),
           const SizedBox(height: 8),

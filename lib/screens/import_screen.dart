@@ -39,7 +39,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         title: const Text('Importer'),
         automaticallyImplyLeading: !widget.isFirstLaunch,
       ),
-      body: AuroraBackground(
+      body: NeonBackground(
         child: userConfigAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _buildErrorState(error),
@@ -84,29 +84,40 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   }
 
   Widget _buildHeader(ThemeData theme, bool isConfigured, UserConfig? userConfig) {
+    final primary = theme.colorScheme.primary;
+    final isDark = theme.brightness == Brightness.dark;
+
     return SurfaceCard(
-      gradient: AppColors.aurora,
+      brackets: true,
       glow: true,
-      borderColor: Colors.white.withValues(alpha: 0.16),
       padding: const EdgeInsets.all(AppSpacing.lg),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          primary.withValues(alpha: isDark ? 0.12 : 0.07),
+          primary.withValues(alpha: 0.0),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  color: primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(color: primary.withValues(alpha: 0.55)),
+                  boxShadow: AppColors.glow(primary, blur: 18, alpha: 0.22),
                 ),
-                child: const Icon(Icons.nightlight_round, size: 26, color: Colors.white),
+                child: Icon(Icons.nightlight_round, size: 22, color: primary),
               ),
               const Spacer(),
               if (isConfigured && userConfig != null)
                 TextButton(
                   onPressed: _showChangeUserDialog,
-                  style: TextButton.styleFrom(foregroundColor: Colors.white),
                   child: const Text('Changer'),
                 ),
             ],
@@ -114,31 +125,23 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           const SizedBox(height: AppSpacing.md),
           Text(
             widget.isFirstLaunch ? 'Bienvenue' : 'Importer un planning',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
+            style: theme.textTheme.headlineLarge,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             widget.isFirstLaunch
                 ? 'Chargez le planning de votre équipe pour commencer : vos nuits, vos collègues et vos rappels seront créés automatiquement.'
                 : 'PDF officiel ou capture d\'écran du planning de l\'équipe.',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.88),
-              fontSize: 13.5,
-              height: 1.4,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
           ),
           if (isConfigured && userConfig != null) ...[
             const SizedBox(height: AppSpacing.md),
             Container(
               padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(AppRadius.md),
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(color: theme.colorScheme.outline),
               ),
               child: Row(
                 children: [
@@ -146,8 +149,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                     name: userConfig.userTrigramme.isNotEmpty
                         ? userConfig.userTrigramme
                         : userConfig.userName,
-                    size: 36,
-                    color: Colors.white24,
+                    size: 34,
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
@@ -156,17 +158,16 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                       children: [
                         Text(
                           userConfig.userName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium,
                         ),
-                        Text(
-                          'Profil actif : ${userConfig.userTrigramme}',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 12,
-                          ),
+                        const SizedBox(height: 3),
+                        TechLabel(
+                          'Profil actif · ${userConfig.userTrigramme}',
+                          size: 8.5,
+                          color: primary,
+                          letterSpacing: 1.2,
                         ),
                       ],
                     ),
@@ -184,11 +185,11 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        TechLabel(
           'Source du planning',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          size: 9.5,
+          color: theme.colorScheme.onSurface,
+          letterSpacing: 1.8,
         ),
         const SizedBox(height: 12),
 
@@ -230,11 +231,11 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        TechLabel(
           'Configuration requise',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          size: 9.5,
+          color: theme.colorScheme.onSurface,
+          letterSpacing: 1.8,
         ),
         const SizedBox(height: 12),
         Card(
@@ -316,22 +317,17 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 44,
+              height: 44,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primary.withValues(alpha: 0.18),
-                    theme.colorScheme.secondary.withValues(alpha: 0.12),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(AppRadius.md),
+                color: theme.colorScheme.primary.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 border: Border.all(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.35),
                 ),
               ),
-              child: Icon(icon, size: 23, color: theme.colorScheme.primary),
+              child: Icon(icon, size: 20, color: theme.colorScheme.primary),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
@@ -345,9 +341,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               ),
             ),
             Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 14,
-              color: theme.colorScheme.onSurfaceVariant,
+              Icons.arrow_forward_rounded,
+              size: 16,
+              color: theme.colorScheme.primary.withValues(alpha: 0.8),
             ),
           ],
         ),
@@ -364,9 +360,14 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           Row(
             children: [
               Icon(Icons.info_outline_rounded,
-                  size: 18, color: theme.colorScheme.secondary),
-              const SizedBox(width: 8),
-              Text('Format attendu', style: theme.textTheme.titleSmall),
+                  size: 14, color: theme.colorScheme.secondary),
+              const SizedBox(width: 7),
+              TechLabel(
+                'Format attendu',
+                size: 9,
+                color: theme.colorScheme.onSurface,
+                letterSpacing: 1.6,
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -703,13 +704,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 6),
                       child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
-                          foregroundColor: Colors.white,
-                          child: Text(
-                            trigramme.isNotEmpty ? trigramme.substring(0, 1).toUpperCase() : '?',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                        leading: InitialsAvatar(
+                          name: trigramme.isEmpty ? '?' : trigramme,
+                          size: 34,
                         ),
                         title: Text(
                           trigramme,
@@ -866,11 +863,23 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.warning,
+                          leading: Container(
+                            width: 34,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppColors.warning.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
+                              border: Border.all(color: AppColors.warning.withValues(alpha: 0.55)),
+                            ),
                             child: Text(
-                              '${date.day}',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              '${date.day}'.padLeft(2, '0'),
+                              style: AppFonts.monoText(
+                                size: 13,
+                                weight: FontWeight.w800,
+                                color: AppColors.warning,
+                                letterSpacing: 0,
+                              ),
                             ),
                           ),
                           title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -893,11 +902,23 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.shiftEnd,
+                        leading: Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.shiftEnd.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            border: Border.all(color: AppColors.shiftEnd.withValues(alpha: 0.5)),
+                          ),
                           child: Text(
-                            '${item.date.day}',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            '${item.date.day}'.padLeft(2, '0'),
+                            style: AppFonts.monoText(
+                              size: 13,
+                              weight: FontWeight.w800,
+                              color: AppColors.shiftEnd,
+                              letterSpacing: 0,
+                            ),
                           ),
                         ),
                         title: Text(formattedDate),
@@ -1123,17 +1144,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               final member = members[index];
               final isCurrent = member.trigramme == currentTrigramme;
               return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: isCurrent
+                leading: InitialsAvatar(
+                  name: member.trigramme.isEmpty ? '?' : member.trigramme,
+                  size: 34,
+                  color: isCurrent
                       ? Theme.of(context).colorScheme.tertiary
                       : Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.black,
-                  child: Text(
-                    member.trigramme.isNotEmpty
-                        ? member.trigramme.substring(0, 1).toUpperCase()
-                        : '?',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
                 ),
                 title: Text(member.trigramme),
                 subtitle: Text(member.firstName),

@@ -217,7 +217,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       ),
-      body: AuroraBackground(
+      body: NeonBackground(
         child: Form(
           key: _formKey,
           child: ListView(
@@ -272,9 +272,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildSectionHeader(ThemeData theme, IconData icon, String title) {
     return Row(
       children: [
-        Icon(icon, color: theme.colorScheme.primary, size: 18),
-        const SizedBox(width: 8),
-        Text(title, style: theme.textTheme.titleSmall),
+        Icon(icon, color: theme.colorScheme.primary, size: 13),
+        const SizedBox(width: 7),
+        TechLabel(
+          title,
+          size: 9,
+          color: theme.colorScheme.onSurface,
+          letterSpacing: 1.9,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(height: 1, color: theme.colorScheme.outline),
+        ),
       ],
     );
   }
@@ -361,10 +370,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               Icon(icon, size: 20, color: selected ? accent : theme.colorScheme.onSurfaceVariant),
               const SizedBox(height: 6),
               Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
+                label.toUpperCase(),
+                style: AppFonts.tag(
+                  size: 9,
                   color: selected ? accent : theme.colorScheme.onSurfaceVariant,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  weight: FontWeight.w800,
+                  letterSpacing: 1.2,
                 ),
               ),
             ],
@@ -471,7 +482,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               subtitle: Text('Début de la garde de nuit'),
               trailing: Text(
                 _formatTimeOfDay(_shiftStartTime),
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: AppFonts.monoText(
+                  size: 17,
+                  weight: FontWeight.w800,
+                  color: theme.colorScheme.secondary,
+                  letterSpacing: -0.4,
+                ),
               ),
               onTap: () => _pickTime(context, true),
             ),
@@ -484,7 +500,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               subtitle: Text('Fin de la garde de nuit'),
               trailing: Text(
                 _formatTimeOfDay(_shiftEndTime),
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: AppFonts.monoText(
+                  size: 17,
+                  weight: FontWeight.w800,
+                  color: theme.colorScheme.secondary,
+                  letterSpacing: -0.4,
+                ),
               ),
               onTap: () => _pickTime(context, false),
             ),

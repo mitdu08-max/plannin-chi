@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning CHI — maquettes</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#0B0E15;color:#E7ECF5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;display:flex;flex-direction:column}
+  header{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid #212938;background:#121722;flex:0 0 auto}
+  .brand{font-size:13px;font-weight:800;letter-spacing:-.2px;margin-right:8px}
+  .brand span{color:#7C8CFF}
+  button{
+    background:transparent;color:#93A4C3;border:1px solid #2A3448;border-radius:999px;
+    padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.15s;font-family:inherit
+  }
+  button:hover{color:#fff;border-color:#3E8BFF}
+  button.on{background:linear-gradient(135deg,#6C5CFF,#3E8BFF);color:#fff;border-color:transparent}
+  .spacer{flex:1}
+  a{color:#7C8CFF;font-size:12px;text-decoration:none;font-weight:600}
+  a:hover{text-decoration:underline}
+  iframe{flex:1;width:100%;border:0;background:#0B0E15}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Planning <span>CHI</span> · maquettes</div>
+    <button id="b1" class="on" onclick="show(1)">5 directions</button>
+    <button id="b2" onclick="show(2)">Design Aurora (détaillé)</button>
+    <div class="spacer"></div>
+    <a id="open" href="design-directions.html" target="_blank">ouvrir en plein écran ↗</a>
+  </header>
+  <iframe id="f" src="design-directions.html" title="maquettes"></iframe>
+  <script>
+    const pages = {1:'design-directions.html', 2:'design-preview.html'};
+    function show(n){
+      document.getElementById('f').src = pages[n];
+      document.getElementById('open').href = pages[n];
+      document.getElementById('b1').classList.toggle('on', n===1);
+      document.getElementById('b2').classList.toggle('on', n===2);
+    }
+  </script>
+</body>
+</html>

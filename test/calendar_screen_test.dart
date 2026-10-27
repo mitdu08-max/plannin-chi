@@ -268,7 +268,10 @@ void main() {
     (tester) async {
       final db = _FakeDatabase();
       await _pumpCalendar(tester, db);
-      await _tapVisible(tester, _day(1, 10));
+      // Sur ce grand écran la case est déjà visible. Ne pas déplacer le
+      // PageView horizontal avec ensureVisible avant le toucher.
+      await tester.tap(_day(1, 10));
+      await tester.pumpAndSettle();
       await _tapVisible(
         tester,
         find.widgetWithText(ElevatedButton, 'Ajouter une garde'),

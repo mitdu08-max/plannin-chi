@@ -25,7 +25,7 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Tests
-        run: flutter test --reporter expanded
+        run: bash .github/scripts/run-with-diagnostics.sh flutter test --reporter expanded
 
   android-debug:
     name: Compilation Android
@@ -47,4 +47,4 @@ jobs:
         run: flutter pub get
 
       - name: APK de débogage
-        run: flutter build apk --debug
+        run: bash .github/scripts/run-with-diagnostics.sh flutter build apk --debug

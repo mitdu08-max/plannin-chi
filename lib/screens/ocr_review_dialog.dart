@@ -182,14 +182,15 @@ class _OcrReviewDialogState extends State<OcrReviewDialog> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Annuler'),
                   ),
-                  const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: _review.isComplete && _verified
                         ? () => Navigator.of(context).pop(_review)

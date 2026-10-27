@@ -90,10 +90,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           final minimumHeight = _calendarFormat == CalendarFormat.month
               ? 430.0
               : 280.0;
+          final needsScroll =
+              !constraints.hasBoundedHeight ||
+              constraints.maxHeight < minimumHeight;
           final height = constraints.hasBoundedHeight
               ? math.max(constraints.maxHeight, minimumHeight)
               : minimumHeight;
           return SingleChildScrollView(
+            key: const ValueKey('calendar-page-scroll'),
             primary: false,
             child: SizedBox(
               height: height,
@@ -103,7 +107,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-                      child: _buildCalendar(theme, shiftsMap),
+                      child: _buildCalendar(
+                        theme,
+                        shiftsMap,
+                        needsScroll: needsScroll,
+                      ),
                     ),
                   ),
                   Padding(
@@ -132,7 +140,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildCalendar(ThemeData theme, Map<DateTime, NightShift> shiftsMap) {
+  Widget _buildCalendar(
+    ThemeData theme,
+    Map<DateTime, NightShift> shiftsMap, {
+    required bool needsScroll,
+  }) {
     final isDark = theme.brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
@@ -160,6 +172,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           CalendarFormat.week: 'Semaine',
         },
         shouldFillViewport: true,
+        // En paysage, laisser le glissement vertical à la page défilante.
+        // Le bouton de format reste disponible pour passer du mois à la semaine.
+        availableGestures: needsScroll
+            ? AvailableGestures.horizontalSwipe
+            : AvailableGestures.all,
         startingDayOfWeek: StartingDayOfWeek.monday,
         daysOfWeekHeight: 34,
         rangeSelectionMode: RangeSelectionMode.disabled,

@@ -263,6 +263,43 @@ void main() {
     expect(find.text('Ajouter une garde'), findsOneWidget);
   });
 
+  testWidgets(
+    'ajouter une garde actualise la fiche sans toucher aux autres dates',
+    (tester) async {
+      final db = _FakeDatabase();
+      await _pumpCalendar(tester, db);
+      await _tapVisible(tester, _day(1, 10));
+      await _tapVisible(
+        tester,
+        find.widgetWithText(ElevatedButton, 'Ajouter une garde'),
+      );
+      await _tapVisible(
+        tester,
+        find.widgetWithText(ElevatedButton, 'Enregistrer'),
+      );
+
+      expect(
+        db.shifts.any((shift) => shift.id == 'current-id_2026_1_10'),
+        isTrue,
+      );
+      expect(db.shifts.any((shift) => shift.id == 'february-shift'), isTrue);
+      expect(find.text('Nuit de garde'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'les formats mois, deux semaines et semaine restent accessibles',
+    (tester) async {
+      await _pumpCalendar(tester, _FakeDatabase());
+      await _tapVisible(tester, find.text('Mois'));
+      expect(find.text('2 sem.'), findsOneWidget);
+      await _tapVisible(tester, find.text('2 sem.'));
+      expect(find.text('Semaine'), findsOneWidget);
+      await _tapVisible(tester, find.text('Semaine'));
+      expect(find.text('Mois'), findsOneWidget);
+    },
+  );
+
   testWidgets('changement de mois et petits écrans restent utilisables', (
     tester,
   ) async {
@@ -283,7 +320,16 @@ void main() {
     tester,
   ) async {
     await _pumpCalendar(tester, _FakeDatabase(), size: const Size(640, 360));
-    await _tapVisible(tester, _day(1, 31));
+    // Faire défiler comme un utilisateur : ensureVisible chercherait aussi à
+    // déplacer horizontalement le PageView contenant les mois.
+    await tester.drag(
+      find.byKey(const ValueKey('calendar-page-scroll')),
+      const Offset(0, -220),
+    );
+    await tester.pumpAndSettle();
+    expect(_day(1, 31), findsOneWidget);
+    await tester.tap(_day(1, 31));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('calendar-day-sheet')), findsOneWidget);
     await tester.ensureVisible(find.text('Ajouter une garde'));
     await tester.pumpAndSettle();

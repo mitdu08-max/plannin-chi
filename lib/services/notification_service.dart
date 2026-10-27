@@ -191,7 +191,7 @@ class NotificationService {
         '${shiftStartTime.minute.toString().padLeft(2, '0') == '00' ? '' : shiftStartTime.minute.toString().padLeft(2, '0')}';
 
     if (coWorkers.isEmpty) {
-      return 'Prise de poste ce soir à $time (Seul de garde).';
+      return 'Prise de poste ce soir à $time (aucun collègue enregistré).';
     }
 
     final names = coWorkers

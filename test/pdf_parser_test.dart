@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:night_shift_planning/services/pdf_parser_service.dart';
+import 'package:night_shift_planning/services/positioned_planning_parser.dart';
 
 /// Jeu de test **synthétique** : aucun nom de soignant réel.
 /// Les plannings d'origine ne doivent pas être versionnés (cf. .gitignore).
@@ -170,4 +171,83 @@ void main() {
       expect(result.warnings, isEmpty, reason: 'warnings = ${result.warnings}');
     });
   });
+
+  group('OCR positionné', () {
+    PlanningOcrWord word(String text, double x, double y) => PlanningOcrWord(
+          text: text,
+          left: x,
+          top: y,
+          width: 10,
+          height: 10,
+        );
+
+    test('conserve les jours manquants sans décaler les nuits suivantes', () {
+      final words = <PlanningOcrWord>[
+        for (var day = 1; day <= 31; day++)
+          word('L${day.toString().padLeft(2, '0')}', 100 + day * 20.0, 10),
+        word('DUPONT', 5, 50),
+        word('N', 120, 50),
+        word('RH', 140, 50),
+        // Jour 3 illisible.
+        word('N', 180, 50),
+      ];
+      final result = PdfParserService.parsePlanningText(
+        'JANVIER 2026',
+        ocrPages: [words],
+      );
+
+      expect(result.isOcr, isTrue);
+      expect(result.agentShifts['DUPONT'], [1, 4]);
+      expect(result.dayCodes['DUPONT']?[3], isNull);
+      expect(result.dayCodes['DUPONT']?[4], 'N');
+      expect(result.tokenCounts['DUPONT'], 3);
+    });
+
+    test('réanalyse les coordonnées si le mois est corrigé', () {
+      final words = <PlanningOcrWord>[
+        for (var day = 1; day <= 31; day++)
+          word('L${day.toString().padLeft(2, '0')}', 100 + day * 20.0, 10),
+        word('DUPONT', 5, 50),
+        word('N', 120, 50),
+        word('RH', 140, 50),
+        word('N', 700, 50), // 30 janvier, hors février.
+      ];
+      final january = PdfParserService.parsePlanningText(
+        'JANVIER 2026',
+        ocrPages: [words],
+      );
+      final february = PdfParserService.parsePlanningText(
+        january.rawText,
+        forcedYear: 2026,
+        forcedMonth: 2,
+        ocrPages: january.ocrPages,
+      );
+
+      expect(january.agentShifts['DUPONT'], [1, 30]);
+      expect(february.month, 2);
+      expect(february.totalDays, 28);
+      expect(february.agentShifts['DUPONT'], [1]);
+      expect(february.dayCodes['DUPONT']?[30], isNull);
+    });
+
+    test('l’absence de coordonnées ne crée aucune case validée automatiquement', () {
+      final result = PdfParserService.parsePlanningText(
+        'JANVIER 2026\nDUPONT N RH N',
+        ocrPages: const [[]],
+      );
+      expect(result.isOcr, isTrue);
+      expect(result.dayCodes, isEmpty);
+      expect(result.hasReliabilityIssue, isTrue);
+    });
+
+    test('les codes CS et FC ne deviennent pas des nuits ni des congés', () {
+      final result = PdfParserService.parsePlanningText(
+        'JANVIER 2026\nDUPONT N CS FC RH',
+      );
+      expect(result.agentShifts['DUPONT'], [1]);
+      expect(result.agentVacations['DUPONT'] ?? {}, isEmpty);
+      expect(result.warnings.any((warning) => warning.contains('CS ou FC')), isTrue);
+    });
+  });
+
 }

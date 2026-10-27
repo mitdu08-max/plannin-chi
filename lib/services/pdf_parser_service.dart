@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import '../constants/app_constants.dart';
+import 'positioned_planning_parser.dart';
 
 /// Résultat d'un import de planning (PDF ou OCR).
 class PlanningParseResult {
@@ -27,6 +28,13 @@ class PlanningParseResult {
 
   final String rawText;
 
+  /// Coordonnées OCR conservées pour réanalyser si l'utilisateur choisit le mois.
+  /// Null pour un PDF avec texte ; une liste vide signifie que l'OCR n'a rien lu.
+  final List<List<PlanningOcrWord>>? ocrPages;
+
+  /// Cases réellement reconnues par leurs coordonnées (les absentes sont inconnues).
+  final Map<String, Map<int, String>> dayCodes;
+
   PlanningParseResult({
     required this.agentShifts,
     required this.agentVacations,
@@ -36,9 +44,12 @@ class PlanningParseResult {
     required this.warnings,
     required this.tokenCounts,
     required this.rawText,
+    this.ocrPages,
+    this.dayCodes = const {},
   });
 
   bool get monthDetected => year != null && month != null;
+  bool get isOcr => ocrPages != null;
 
   /// Vrai si au moins une ligne du planning n'a pas le bon nombre de cellules :
   /// dans ce cas les jours peuvent être décalés, la validation doit être
@@ -60,6 +71,8 @@ class PlanningParseResult {
       warnings: warnings ?? this.warnings,
       tokenCounts: tokenCounts,
       rawText: rawText,
+      ocrPages: ocrPages,
+      dayCodes: dayCodes,
     );
   }
 }
@@ -69,13 +82,12 @@ class PlanningParseResult {
 /// Le format analysé est une grille : une ligne par agent, une cellule par jour
 /// contenant un code (`N`, `RH`, `R`, `CA`, `CET`, `CFR`, `F`, `J`, `F EXT`).
 ///
-/// Le parseur reste volontairement tolérant (pas de gestion des coordonnées,
-/// qui n'est pas exposée de la même façon par le PDF et par l'OCR), mais il
-/// **vérifie désormais le nombre de cellules de chaque ligne** : c'est le seul
-/// garde-fou possible pour éviter un décalage silencieux de tout le mois.
+/// L'OCR utilise les coordonnées des cases quand les en-têtes sont lisibles.
+/// La lecture textuelle séquentielle conserve un contrôle du nombre de cases ;
+/// dans les deux cas l'utilisateur doit vérifier l'aperçu avant l'import.
 class PdfParserService {
   static const List<String> _validCodes = [
-    'F_EXT', 'CET', 'CFR', 'RH', 'CA', 'N', 'R', 'F', 'J',
+    'F_EXT', 'CET', 'CFR', 'RH', 'CA', 'CS', 'FC', 'N', 'R', 'F', 'J',
   ];
 
   static const List<String> _vacationCodes = ['CA', 'CET', 'CFR'];
@@ -134,6 +146,7 @@ class PdfParserService {
     int? forcedYear,
     int? forcedMonth,
     List<String> knownAgents = AppConstants.knownAgentNames,
+    List<List<PlanningOcrWord>>? ocrPages,
   }) {
     // 1. Normalisation (on ne touche PAS aux retours à la ligne : ils
     // délimitent les lignes d'agents)
@@ -154,6 +167,63 @@ class PdfParserService {
       warnings.add(
         'Le mois n\'a pas pu être déterminé automatiquement depuis le document.',
       );
+    }
+
+    if (ocrPages != null) {
+      final positioned = PositionedPlanningParser.parse(
+        ocrPages,
+        totalDays: totalDays,
+      );
+      if (positioned != null) {
+        warnings.addAll(positioned.warnings);
+        final agentShifts = <String, List<int>>{};
+        final agentVacations = <String, Map<int, String>>{};
+        final tokenCounts = <String, int>{};
+        var hasOtherCodes = false;
+        for (final entry in positioned.dayCodes.entries) {
+          final days = <int>[];
+          final vacations = <int, String>{};
+          for (final cell in entry.value.entries) {
+            if (cell.value == 'N') days.add(cell.key);
+            if (_vacationCodes.contains(cell.value)) {
+              vacations[cell.key] = cell.value;
+            }
+            if (cell.value == 'CS' || cell.value == 'FC') hasOtherCodes = true;
+          }
+          days.sort();
+          agentShifts[entry.key] = days;
+          if (vacations.isNotEmpty) agentVacations[entry.key] = vacations;
+          tokenCounts[entry.key] = entry.value.length;
+        }
+        if (hasOtherCodes) {
+          warnings.add(
+            'Certains codes (CS ou FC) ne sont pas importés comme congés. '
+            'Vérifiez-les sur le document.',
+          );
+        }
+        return PlanningParseResult(
+          agentShifts: agentShifts,
+          agentVacations: agentVacations,
+          year: year,
+          month: month,
+          totalDays: totalDays,
+          warnings: warnings,
+          tokenCounts: tokenCounts,
+          rawText: rawText,
+          ocrPages: ocrPages,
+          dayCodes: positioned.dayCodes,
+        );
+      }
+      warnings.add(
+        'Les colonnes n\'ont pas pu être repérées. Les dates proposées peuvent '
+        'être décalées : vérifiez tous les jours avant de les enregistrer.',
+      );
+      if (ocrPages.length > 1) {
+        warnings.add(
+          'Plusieurs pages ont été lues. Vérifiez qu’elles concernent toutes '
+          'le même mois ; importez les mois séparément.',
+        );
+      }
     }
 
     // 3. Analyse ligne par ligne
@@ -204,6 +274,15 @@ class PdfParserService {
         final tokens = _tokenize(cleanLine);
         if (tokens.isNotEmpty) agentRawTokens[currentAgent]!.addAll(tokens);
       }
+    }
+
+    if (agentRawTokens.values.any(
+      (tokens) => tokens.contains('CS') || tokens.contains('FC'),
+    )) {
+      warnings.add(
+        'Certains codes (CS ou FC) ne sont pas importés comme congés. '
+        'Vérifiez-les sur le document.',
+      );
     }
 
     // 4. Conversion jetons -> jours
@@ -263,6 +342,7 @@ class PdfParserService {
       warnings: warnings,
       tokenCounts: tokenCounts,
       rawText: rawText,
+      ocrPages: ocrPages,
     );
   }
 

@@ -14,10 +14,10 @@ calendrier, statistiques et rappels avant chaque prise de poste.
 | Domaine | Détail |
 |---|---|
 | **Accueil** | Prochaine garde (compte à rebours, horaires, collègues), 7 jours à venir, chiffres du mois |
-| **Import** | PDF (extraction de texte) ou photo / capture d'écran (OCR local ML Kit) |
+| **Import** | PDF texte, PDF scanné (1 à 10 pages), photo ou capture d'écran ; OCR ML Kit local sur Android |
 | **Analyse** | Extraction des nuits de l'utilisateur, des congés (CA / CET / CFR) et des collègues en poste chaque nuit |
-| **Contrôle qualité** | Chaque ligne du planning est vérifiée : si une ligne n'a pas le bon nombre de cellules, un avertissement bloque la validation silencieuse |
-| **Calendrier** | Vue mensuelle, détail du jour (horaires, durée réelle, collègues), congés, ajout / modification / suppression manuelle |
+| **Contrôle qualité** | Pour l'OCR : confirmation du mois et vérification de chaque jour des lignes importées ; les cases illisibles restent inconnues jusqu'à correction |
+| **Calendrier** | Grande grille mensuelle et fiche du jour vitrée (horaires, durée réelle, collègues), navigation mois/semaine, ajout / modification / suppression manuelle |
 | **Statistiques** | Heures cumulées (mois / année), nuits par jour de semaine, week-ends complets / demi / repos, binômes les plus fréquents |
 | **Notifications** | Rappel paramétrable avant chaque garde, avec les prénoms des collègues de service |
 | **Apparence** | Thème nuit (défaut) / jour / système, persisté |
@@ -69,24 +69,45 @@ lib/
 ├─ screens/                   accueil, calendrier, statistiques, réglages, import
 └─ services/
    ├─ database_service.dart   Hive (3 box), purge par mois, upsert équipe
-   ├─ pdf_parser_service.dart extraction PDF + analyse texte commune
-   ├─ ocr_parser_service.dart ML Kit -> même analyseur
+   ├─ pdf_parser_service.dart extraction PDF + analyse texte
+   ├─ pdf_image_renderer.dart rendu local des pages PDF sur Android
+   ├─ ocr_parser_service.dart OCR ML Kit et coordonnées des mots
+   ├─ positioned_planning_parser.dart repérage des colonnes et cases OCR
+   ├─ planning_day_review.dart état de la vérification manuelle
    ├─ statistics_service.dart calculs purs, testés
    └─ notification_service.dart rappels locaux (alarmes exactes)
 ```
 
 ### À propos de l'analyse du planning
 
-Le parseur lit une grille « 1 ligne = 1 agent, 1 cellule = 1 jour ». Comme un
-PDF et un OCR ne fournissent pas la même géométrie, la position des cellules
-n'est pas utilisée : les codes sont lus dans l'ordre de la ligne. **Conséquence
-assumée** : si une cellule disparaît, la ligne se décale. C'est pourquoi le
-nombre de cellules de chaque ligne est contrôlé (`totalDays`) et affiché dans
-l'aperçu d'import. Une ligne incomplète est signalée mais reste importable
-après validation explicite.
+Le parseur lit une grille « 1 ligne = 1 agent, 1 cellule = 1 jour ». Pour les
+images et PDF scannés, il utilise les coordonnées OCR et les numéros en tête
+de colonnes pour associer les codes aux jours. Les cases absentes ou ambiguës
+restent « ? » : l'utilisateur doit les renseigner et confirmer avoir comparé
+tous les jours au document, car même une case reconnue peut être erronée.
+Les codes CS et FC sont également à préciser manuellement ; seuls CA, CET et
+CFR sont enregistrés comme congés. La page originale est accessible avec zoom
+pendant cette vérification. Si les colonnes ne sont pas assez lisibles, toutes
+les cases doivent être saisies manuellement.
 
-Le mois n'est **jamais deviné** : si le titre du document est illisible, il est
-demandé à l'utilisateur.
+L'utilisateur confirme ou corrige toujours le mois et l'année pour l'OCR. Il
+choisit sa ligne, puis peut importer seulement son planning ou toutes les
+lignes détectées ; dans ce dernier cas chaque ligne nécessite une vérification.
+Un nom mal reconnu peut être associé à une personne déjà enregistrée. L'import
+personnel ne récupère pas les collègues. Toute donnée existante des agents et du mois
+concernés est remplacée uniquement après confirmation ; les autres mois sont
+conservés. L'application ne précharge plus automatiquement les anciens
+plannings d'octobre et novembre au démarrage. Cette modification ne supprime
+pas les entrées déjà présentes : vérifiez les données préchargées auparavant.
+Importez un mois par fichier : les pages d'un PDF multipage doivent
+concerner le même mois. Le PDF original est préférable à une capture réduite.
+Pour l'OCR d'un PDF, des images temporaires sont créées dans le cache privé de
+l'application et supprimées en fin d'import ; après une interruption, Android
+ou le prochain rendu PDF peut également nettoyer ces fichiers.
+
+Pour un PDF contenant du texte sélectionnable, la lecture reste séquentielle :
+une case manquante peut décaler les suivantes. Un avertissement est affiché
+pour les lignes incomplètes et l'aperçu doit être vérifié.
 
 ## Tests
 
@@ -95,7 +116,14 @@ flutter test
 ```
 
 - `test/pdf_parser_test.dart` — parseur : extraction, agents inconnus, lignes
-  incomplètes, mois absent / forcé, codes `F EXT`, lignes de continuation.
+  incomplètes, mois absent / forcé, codes `F EXT` et OCR positionné.
+- `test/positioned_planning_parser_test.dart`, `test/planning_day_review_test.dart`
+  et `test/ocr_review_dialog_test.dart` — colonnes OCR, cases inconnues,
+  conflits et vérification manuelle.
+- `test/calendar_screen_test.dart` — fiche du jour, actions, données mises à
+  jour, navigation et petits écrans.
+- `test/database_initialization_test.dart` — conservation des entrées au
+  démarrage sans préchargement automatique.
 - `test/night_shift_test.dart` — durée des gardes de nuit (minuit), horaires
   identiques, calculs de dates.
 - `test/statistics_service_test.dart` — heures, week-ends à cheval sur deux

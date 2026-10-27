@@ -403,10 +403,12 @@ class _NextShiftCard extends StatelessWidget {
                       Icon(Icons.person_outline_rounded,
                           size: 14, color: theme.colorScheme.onSurfaceVariant),
                       const SizedBox(width: 6),
-                      TechLabel(
-                        'Seul de garde',
-                        size: 9,
-                        letterSpacing: 1.4,
+                      Flexible(
+                        child: TechLabel(
+                          'Aucun collègue enregistré',
+                          size: 9,
+                          letterSpacing: 1.4,
+                        ),
                       ),
                     ],
                   )

@@ -1,4 +1,5 @@
-import 'dart:ui';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -9,24 +10,29 @@ import '../providers/providers.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
+import 'calendar_day_sheet.dart';
 import 'import_screen.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({super.key, this.initialDay});
+
+  /// Permet aussi d'ouvrir le calendrier sur une date précise dans les tests.
+  final DateTime? initialDay;
 
   @override
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
 }
 
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
-  DateTime _focusedDay = DateTime.now();
+  late DateTime _focusedDay;
   DateTime? _selectedDay;
   CalendarFormat _calendarFormat = CalendarFormat.month;
-  bool _initialized = false;
+  bool _sheetOpen = false;
 
   @override
   void initState() {
     super.initState();
+    _focusedDay = widget.initialDay ?? DateTime.now();
     _selectedDay = _focusedDay;
   }
 
@@ -43,805 +49,472 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.today),
-            onPressed: () => _goToToday(),
+            onPressed: _goToToday,
             tooltip: "Aujourd'hui",
           ),
         ],
       ),
       body: NeonBackground(
         child: nightShiftsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _buildErrorState(error),
-        data: (allShifts) => userConfigAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => _buildErrorState(error),
-          data: (userConfig) => teamMembersAsync.when(
+          data: (allShifts) => userConfigAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, _) => _buildErrorState(error),
-            data: (teamMembers) {
-              if (userConfig == null) {
-                return _buildNotConfiguredState();
-              }
+            data: (userConfig) => teamMembersAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => _buildErrorState(error),
+              data: (_) {
+                if (userConfig == null) return _buildNotConfiguredState();
+                final shiftsMap = _userShiftsByDay(allShifts, userConfig);
+                return _buildCalendarPage(theme, shiftsMap);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-              // Filter shifts for current user (working shifts AND vacations)
-              final userShifts = allShifts
-                  .where((s) =>
-                      (s.agentId == userConfig.userId ||
-                       s.agentTrigramme.toUpperCase() == userConfig.userTrigramme.toUpperCase() ||
-                       s.agentTrigramme.toUpperCase() == userConfig.userName.toUpperCase()) &&
-                      (s.isWorking || s.isVacation))
-                  .toList();
-
-              // Create a map of date -> shift for quick lookup
-              final shiftsMap = <DateTime, NightShift>{};
-              // Add vacation shifts first
-              for (final shift in userShifts.where((s) => s.isVacation)) {
-                final dateKey = DateTime(shift.date.year, shift.date.month, shift.date.day);
-                shiftsMap[dateKey] = shift;
-              }
-              // Add working shifts (working shifts take priority if on same date)
-              for (final shift in userShifts.where((s) => s.isWorking)) {
-                final dateKey = DateTime(shift.date.year, shift.date.month, shift.date.day);
-                shiftsMap[dateKey] = shift;
-              }
-
-              // Initialize focusedDay to first worked day if not already initialized
-              if (!_initialized && userShifts.isNotEmpty) {
-                final firstShiftDate = userShifts
-                    .map((s) => s.date)
-                    .reduce((a, b) => a.isBefore(b) ? a : b);
-                _focusedDay = DateTime(firstShiftDate.year, firstShiftDate.month, 1);
-                _initialized = true;
-              }
-
-              return Column(
+  Widget _buildCalendarPage(
+    ThemeData theme,
+    Map<DateTime, NightShift> shiftsMap,
+  ) {
+    // La grille occupe toute la hauteur disponible. En paysage ou sur un très
+    // petit écran, un défilement conserve des cases faciles à toucher.
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final minimumHeight = _calendarFormat == CalendarFormat.month
+              ? 430.0
+              : 280.0;
+          final height = constraints.hasBoundedHeight
+              ? math.max(constraints.maxHeight, minimumHeight)
+              : minimumHeight;
+          return SingleChildScrollView(
+            primary: false,
+            child: SizedBox(
+              height: height,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildCalendar(theme, shiftsMap, teamMembers),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                      child: _buildCalendar(theme, shiftsMap),
+                    ),
+                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: const StatusLegend(),
                   ),
-                  const SizedBox(height: 12),
-                  _buildDayDetails(theme, shiftsMap, userConfig, teamMembers, allShifts),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      'Touchez un jour pour voir le détail',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.72,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                 ],
-              );
-            },
-          ),
-        ),
-      ),
-      ),
-    );
-  }
-
-  Widget _buildCalendar(ThemeData theme, Map<DateTime, NightShift> shiftsMap, List<TeamMember> teamMembers) {
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        child: TableCalendar<NightShift>(
-          locale: 'fr_FR',
-          firstDay: DateTime.utc(2020, 1, 1),
-          lastDay: DateTime.utc(2030, 12, 31),
-          focusedDay: _focusedDay,
-          calendarFormat: _calendarFormat,
-          startingDayOfWeek: StartingDayOfWeek.monday,
-          daysOfWeekHeight: 32.0,
-          rowHeight: 46.0,
-          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-          onDaySelected: (selectedDay, focusedDay) {
-            setState(() {
-              _selectedDay = selectedDay;
-              _focusedDay = focusedDay;
-            });
-          },
-          onFormatChanged: (format) {
-            setState(() => _calendarFormat = format);
-          },
-          onPageChanged: (focusedDay) {
-            setState(() {
-              _focusedDay = focusedDay;
-            });
-          },
-          eventLoader: (day) {
-            final dateKey = DateTime(day.year, day.month, day.day);
-            final shift = shiftsMap[dateKey];
-            return shift != null ? [shift] : [];
-          },
-          calendarStyle: CalendarStyle(
-            outsideDaysVisible: false,
-            weekendTextStyle: TextStyle(color: theme.colorScheme.error),
-            holidayTextStyle: TextStyle(color: theme.colorScheme.error),
-            markersMaxCount: 0,
-            markerDecoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
             ),
-          ),
-          headerStyle: HeaderStyle(
-            formatButtonVisible: true,
-            titleCentered: true,
-            formatButtonDecoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            formatButtonTextStyle: TextStyle(
-              color: theme.colorScheme.onPrimaryContainer,
-            ),
-            titleTextStyle: AppFonts.monoText(
-              size: 13,
-              weight: FontWeight.w800,
-              color: theme.colorScheme.onSurface,
-              letterSpacing: 1,
-            ),
-            leftChevronIcon: Icon(
-              Icons.chevron_left,
-              color: theme.colorScheme.onSurface,
-            ),
-            rightChevronIcon: Icon(
-              Icons.chevron_right,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-          daysOfWeekStyle: DaysOfWeekStyle(
-            weekendStyle: AppFonts.tag(
-              size: 9,
-              color: theme.colorScheme.error,
-              weight: FontWeight.w800,
-              letterSpacing: 1.2,
-            ),
-            weekdayStyle: AppFonts.tag(
-              size: 9,
-              color: theme.colorScheme.onSurfaceVariant,
-              weight: FontWeight.w800,
-              letterSpacing: 1.2,
-            ),
-          ),
-          calendarBuilders: CalendarBuilders(
-            markerBuilder: (context, day, events) => const SizedBox.shrink(),
-            defaultBuilder: (context, day, focusedDay) {
-              final dateKey = DateTime(day.year, day.month, day.day);
-              final shift = shiftsMap[dateKey];
-              if (shift != null) {
-                if (shift.isVacation) {
-                  return _buildVacationDayCell(theme, day);
-                }
-                return _buildWorkedDayCell(theme, day);
-              }
-              return null;
-            },
-            todayBuilder: (context, day, focusedDay) {
-              final dateKey = DateTime(day.year, day.month, day.day);
-              final shift = shiftsMap[dateKey];
-              final isWorking = shift != null && shift.isWorking;
-              final isVacation = shift != null && shift.isVacation;
-              return _buildTodayCell(theme, day, isWorking, isVacation);
-            },
-            selectedBuilder: (context, day, focusedDay) {
-              final dateKey = DateTime(day.year, day.month, day.day);
-              final shift = shiftsMap[dateKey];
-              final isWorking = shift != null && shift.isWorking;
-              final isVacation = shift != null && shift.isVacation;
-              return _buildSelectedCell(theme, day, isWorking, isVacation);
-            },
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildWorkedDayCell(ThemeData theme, DateTime day) {
-    return _dayCell(
-      day: day,
-      gradient: AppColors.shiftGradient,
-      textColor: Colors.white,
-    );
-  }
-
-  Widget _buildVacationDayCell(ThemeData theme, DateTime day) {
-    return _dayCell(
-      day: day,
-      gradient: AppColors.vacationGradient,
-      textColor: Colors.white,
-    );
-  }
-
-  Widget _buildTodayCell(
-    ThemeData theme,
-    DateTime day,
-    bool isWorking,
-    bool isVacation,
-  ) {
-    final hasStatus = isWorking || isVacation;
-    return _dayCell(
-      day: day,
-      gradient: isWorking
-          ? AppColors.shiftGradient
-          : (isVacation ? AppColors.vacationGradient : null),
-      background: hasStatus
-          ? null
-          : theme.colorScheme.primary.withValues(alpha: 0.12),
-      textColor: hasStatus ? Colors.white : theme.colorScheme.primary,
-      border: Border.all(color: theme.colorScheme.primary, width: 1.6),
-    );
-  }
-
-  Widget _buildSelectedCell(
-    ThemeData theme,
-    DateTime day,
-    bool isWorking,
-    bool isVacation,
-  ) {
-    return _dayCell(
-      day: day,
-      gradient: isWorking
-          ? AppColors.shiftGradient
-          : (isVacation ? AppColors.vacationGradient : AppColors.neonDeepGradient),
-      textColor: Colors.white,
-      glow: true,
-    );
-  }
-
-  /// Cellule de calendrier commune (nuit / congé / aujourd'hui / sélection).
-  Widget _dayCell({
-    required DateTime day,
-    Gradient? gradient,
-    Color? background,
-    required Color textColor,
-    BoxBorder? border,
-    bool glow = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.all(3.5),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        gradient: gradient,
-        color: background,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: border,
-        boxShadow: glow && gradient != null
-            ? [
-                BoxShadow(
-                  color: gradient.colors.first.withValues(alpha: 0.45),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      child: Text(
-        '${day.day}',
-        style: AppFonts.monoText(
-          size: 13.5,
-          weight: FontWeight.w800,
-          color: textColor,
-          letterSpacing: -0.2,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDayDetails(
-    ThemeData theme,
-    Map<DateTime, NightShift> shiftsMap,
-    UserConfig userConfig,
-    List<TeamMember> teamMembers,
-    List<NightShift> allShifts,
-  ) {
-    if (_selectedDay == null) {
-      return const SizedBox.shrink();
-    }
-
-    final dateKey = DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day);
-    final shift = shiftsMap[dateKey];
+  Widget _buildCalendar(ThemeData theme, Map<DateTime, NightShift> shiftsMap) {
     final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(
+          alpha: isDark ? 0.88 : 0.94,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withValues(
+            alpha: isDark ? 0.10 : 0.12,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+      child: TableCalendar<NightShift>(
+        key: const ValueKey('calendar-grid'),
+        locale: 'fr_FR',
+        firstDay: DateTime.utc(2020, 1, 1),
+        lastDay: DateTime.utc(2030, 12, 31),
+        focusedDay: _focusedDay,
+        calendarFormat: _calendarFormat,
+        availableCalendarFormats: const {
+          CalendarFormat.month: 'Mois',
+          CalendarFormat.twoWeeks: '2 sem.',
+          CalendarFormat.week: 'Semaine',
+        },
+        shouldFillViewport: true,
+        startingDayOfWeek: StartingDayOfWeek.monday,
+        daysOfWeekHeight: 34,
+        rangeSelectionMode: RangeSelectionMode.disabled,
+        selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+        onDaySelected: (selectedDay, focusedDay) {
+          setState(() {
+            _selectedDay = selectedDay;
+            _focusedDay = focusedDay;
+          });
+          _showDayDetails(selectedDay);
+        },
+        onFormatChanged: (format) => setState(() => _calendarFormat = format),
+        onPageChanged: (focusedDay) => setState(() => _focusedDay = focusedDay),
+        eventLoader: (day) {
+          final shift = shiftsMap[_dateOnly(day)];
+          return shift == null ? [] : [shift];
+        },
+        calendarStyle: const CalendarStyle(
+          outsideDaysVisible: false,
+          markersMaxCount: 0,
+          cellMargin: EdgeInsets.zero,
+        ),
+        headerStyle: HeaderStyle(
+          formatButtonVisible: true,
+          formatButtonShowsNext: false,
+          titleCentered: true,
+          headerPadding: const EdgeInsets.symmetric(vertical: 8),
+          leftChevronMargin: EdgeInsets.zero,
+          rightChevronMargin: EdgeInsets.zero,
+          leftChevronPadding: const EdgeInsets.all(8),
+          rightChevronPadding: const EdgeInsets.all(8),
+          formatButtonPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 6,
+          ),
+          formatButtonDecoration: BoxDecoration(
+            color: theme.colorScheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          formatButtonTextStyle: theme.textTheme.labelSmall!.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w700,
+          ),
+          titleTextStyle: theme.textTheme.titleMedium!.copyWith(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
+          leftChevronIcon: Icon(
+            Icons.chevron_left_rounded,
+            color: theme.colorScheme.onSurface,
+          ),
+          rightChevronIcon: Icon(
+            Icons.chevron_right_rounded,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        daysOfWeekStyle: DaysOfWeekStyle(
+          weekdayStyle: AppFonts.tag(
+            size: 9,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
+            weight: FontWeight.w700,
+            letterSpacing: 0.4,
+          ),
+          weekendStyle: AppFonts.tag(
+            size: 9,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
+            weight: FontWeight.w700,
+            letterSpacing: 0.4,
+          ),
+        ),
+        calendarBuilders: CalendarBuilders<NightShift>(
+          markerBuilder: (_, _, _) => const SizedBox.shrink(),
+          defaultBuilder: (_, day, _) =>
+              _buildDayCell(theme, day, shiftsMap[_dateOnly(day)]),
+          todayBuilder: (_, day, _) => _buildDayCell(
+            theme,
+            day,
+            shiftsMap[_dateOnly(day)],
+            isToday: true,
+          ),
+          selectedBuilder: (_, day, _) => _buildDayCell(
+            theme,
+            day,
+            shiftsMap[_dateOnly(day)],
+            isToday: isSameDay(day, DateTime.now()),
+            isSelected: true,
+          ),
+        ),
+      ),
+    );
+  }
 
-    String formattedDate;
+  Widget _buildDayCell(
+    ThemeData theme,
+    DateTime day,
+    NightShift? shift, {
+    bool isToday = false,
+    bool isSelected = false,
+  }) {
+    final isDark = theme.brightness == Brightness.dark;
+    final isWorking = shift?.isWorking ?? false;
+    final isRest = shift?.isVacation == true && shift?.vacationType == 'REPOS';
+    final isVacation = shift?.isVacation == true && !isRest;
+    final accent = isWorking
+        ? theme.colorScheme.primary
+        : isVacation
+        ? theme.colorScheme.secondary
+        : theme.colorScheme.onSurface.withValues(alpha: 0.72);
+    final label = isWorking
+        ? 'NUIT'
+        : isVacation
+        ? shift!.vacationType
+        : isRest
+        ? 'REPOS'
+        : '';
+    final description = isWorking
+        ? 'nuit de garde'
+        : isVacation
+        ? 'congé ${shift!.vacationType}'
+        : isRest
+        ? 'repos'
+        : 'aucune garde enregistrée';
+    final background = isWorking || isVacation || isRest
+        ? accent.withValues(alpha: isDark ? 0.15 : 0.11)
+        : isSelected
+        ? theme.colorScheme.primary.withValues(alpha: 0.10)
+        : Colors.transparent;
+    final borderColor = isSelected
+        ? theme.colorScheme.primary
+        : isToday
+        ? theme.colorScheme.onSurface.withValues(alpha: 0.45)
+        : Colors.transparent;
+
+    return LayoutBuilder(
+      builder: (context, constraints) => Semantics(
+        label:
+            '${day.day}/${day.month}/${day.year}, $description${isToday ? ', aujourd’hui' : ''}',
+        selected: isSelected,
+        child: Container(
+          key: ValueKey('calendar-day-${day.year}-${day.month}-${day.day}'),
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: isSelected ? 1.5 : 1),
+          ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${day.day}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: isToday || isSelected
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  if (label.isNotEmpty && constraints.maxHeight >= 46) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      style: AppFonts.tag(
+                        size: 8,
+                        color: accent,
+                        weight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDayDetails(DateTime day) async {
+    if (_sheetOpen) return;
+    _sheetOpen = true;
     try {
-      final raw = DateFormat('EEEE d MMMM yyyy', 'fr_FR').format(_selectedDay!);
-      formattedDate = raw.isNotEmpty ? raw[0].toUpperCase() + raw.substring(1) : raw;
-    } catch (_) {
-      formattedDate = '${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year}';
-    }
-    final timeFormat = DateFormat('HH:mm');
-
-    final bool isWorking = shift != null && shift.isWorking;
-    final bool isVacation = shift != null && shift.isVacation;
-    final String vacationType = isVacation ? shift.vacationType : '';
-
-    final Color accentColor = isWorking
-        ? AppColors.shiftEnd
-        : (isVacation ? AppColors.vacationStart : theme.colorScheme.onSurfaceVariant);
-
-    final String badgeText = isWorking
-        ? 'Nuit de garde'
-        : (isVacation ? 'Congés ($vacationType)' : 'Repos');
-
-    // Gardes de l'équipe pour cette date
-    final onDutyShifts = allShifts.where((s) =>
-        s.isWorking &&
-        s.date.year == dateKey.year &&
-        s.date.month == dateKey.month &&
-        s.date.day == dateKey.day
-    ).toList();
-
-    // Identifier qui travaille cette nuit-là
-    final List<String> colleagueIds;
-    if (isWorking) {
-      if (shift.coWorkerIds.isNotEmpty) {
-        colleagueIds = shift.coWorkerIds;
-      } else {
-        colleagueIds = onDutyShifts
-            .where((s) =>
-                s.agentId != userConfig.userId &&
-                s.agentTrigramme.toUpperCase() != userConfig.userTrigramme.toUpperCase() &&
-                s.agentTrigramme.toUpperCase() != userConfig.userName.toUpperCase())
-            .map((s) => s.agentId)
-            .toList();
-      }
-    } else {
-      // Repos ou congés : on affiche toute l'équipe en poste ce soir
-      colleagueIds = onDutyShifts
-          .where((s) =>
-              s.agentId != userConfig.userId &&
-              s.agentTrigramme.toUpperCase() != userConfig.userTrigramme.toUpperCase() &&
-              s.agentTrigramme.toUpperCase() != userConfig.userName.toUpperCase())
-          .map((s) => s.agentId)
-          .toList();
-    }
-
-    final onDutyMembers = colleagueIds.map((id) {
-      return teamMembers.firstWhere(
-        (m) => m.id == id || m.trigramme == id,
-        orElse: () => TeamMember(
-          id: id,
-          firstName: id,
-          lastName: '',
-          trigramme: id,
+      await showModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.32),
+        builder: (sheetContext) => DraggableScrollableSheet(
+          initialChildSize: 0.70,
+          minChildSize: 0.32,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) => Consumer(
+            builder: (context, ref, _) => ref
+                .watch(allNightShiftsProvider)
+                .when(
+                  loading: () => _sheetMessage(scrollController, 'Chargement…'),
+                  error: (_, _) => _sheetMessage(
+                    scrollController,
+                    'Impossible de charger les gardes.',
+                  ),
+                  data: (allShifts) => ref
+                      .watch(userConfigProvider)
+                      .when(
+                        loading: () =>
+                            _sheetMessage(scrollController, 'Chargement…'),
+                        error: (_, _) => _sheetMessage(
+                          scrollController,
+                          'Impossible de charger le profil.',
+                        ),
+                        data: (config) => ref
+                            .watch(teamMembersProvider)
+                            .when(
+                              loading: () => _sheetMessage(
+                                scrollController,
+                                'Chargement…',
+                              ),
+                              error: (_, _) => _sheetMessage(
+                                scrollController,
+                                'Impossible de charger l’équipe.',
+                              ),
+                              data: (members) {
+                                if (config == null) {
+                                  return _sheetMessage(
+                                    scrollController,
+                                    'Profil non configuré.',
+                                  );
+                                }
+                                final shift = _userShiftsByDay(
+                                  allShifts,
+                                  config,
+                                )[_dateOnly(day)];
+                                return CalendarDaySheet(
+                                  key: const ValueKey('calendar-day-sheet'),
+                                  day: day,
+                                  shift: shift,
+                                  colleagues: _colleaguesForDay(
+                                    day,
+                                    shift,
+                                    allShifts,
+                                    config,
+                                    members,
+                                  ),
+                                  scrollController: scrollController,
+                                  onClose: () =>
+                                      Navigator.of(sheetContext).pop(),
+                                  onAdd: () => _showAddShiftDialog(day),
+                                  onEdit: () {
+                                    if (shift != null)
+                                      _showEditShiftDialog(shift);
+                                  },
+                                  onDelete: () {
+                                    if (shift != null)
+                                      _confirmDeleteShift(shift);
+                                  },
+                                );
+                              },
+                            ),
+                      ),
+                ),
+          ),
         ),
       );
-    }).toList();
-
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                border: Border.all(
-                  color: isDark
-                      ? accentColor.withValues(alpha: 0.45)
-                      : accentColor.withValues(alpha: 0.35),
-                  width: 1.4,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withValues(alpha: 0.12),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header: Date & Status Glass Badge
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            formattedDate,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: accentColor.withValues(alpha: isDark ? 0.25 : 0.15),
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            border: Border.all(
-                              color: accentColor.withValues(alpha: 0.5),
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            badgeText,
-                            style: TextStyle(
-                              color: accentColor,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12.5,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    if (isVacation) ...[
-                      // Vacation Glass Block
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.vacationStart.withValues(alpha: isDark ? 0.12 : 0.08),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(
-                            color: AppColors.vacationStart.withValues(alpha: 0.35),
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.vacationStart.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                                  ),
-                                  child: const Icon(Icons.beach_access, color: AppColors.vacationStart, size: 20),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _getVacationLabel(vacationType),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: AppColors.vacationStart,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Journée de congés posée. Tu ne travailles pas cette nuit.',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else if (isWorking) ...[
-                      // Shift Hours Glass Block
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: AppColors.shiftEnd.withValues(alpha: isDark ? 0.14 : 0.08),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(
-                            color: AppColors.shiftEnd.withValues(alpha: 0.35),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.shiftEnd.withValues(alpha: 0.22),
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                              ),
-                              child: const Icon(Icons.nightlight_round, color: AppColors.shiftEnd, size: 18),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              '${timeFormat.format(DateTime(0, 1, 1, shift.startTime.hour, shift.startTime.minute))} — '
-                              '${timeFormat.format(DateTime(0, 1, 1, shift.endTime.hour, shift.endTime.minute))}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05),
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                              ),
-                              child: Text(
-                                '${shift.durationHours.toStringAsFixed(0)}h',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      if (shift.isManualOverride) ...[
-                        const SizedBox(height: 12),
-                        _buildDetailRow(
-                          theme,
-                          Icons.edit,
-                          'Modification manuelle',
-                          'Cette garde a été modifiée manuellement',
-                          valueColor: theme.colorScheme.tertiary,
-                        ),
-                      ],
-                    ] else ...[
-                      // Repos Glass Block
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: AppColors.vacationStart.withValues(alpha: isDark ? 0.12 : 0.07),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(
-                            color: AppColors.vacationStart.withValues(alpha: 0.35),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: AppColors.vacationStart.withValues(alpha: 0.22),
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                              ),
-                              child: const Icon(Icons.beach_access, size: 24, color: AppColors.vacationStart),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Jour de repos',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Aucune garde prévue pour toi cette date.',
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 18),
-
-                    // Section Équipe en poste (toujours affichée, que l'on travaille ou pas !)
-                    _buildSectionHeader(
-                      theme,
-                      isWorking ? 'Équipe en poste avec toi' : 'Équipe de garde ce soir-là',
-                      Icons.groups_outlined,
-                    ),
-                    const SizedBox(height: 10),
-
-                    if (onDutyMembers.isNotEmpty) ...[
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: onDutyMembers.map((colleague) {
-                          return _buildColleagueBadge(theme, colleague);
-                        }).toList(),
-                      ),
-                    ] else ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(
-                            color: theme.colorScheme.outline.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isWorking ? Icons.person_outline : Icons.nightlight_outlined,
-                              color: theme.colorScheme.onSurfaceVariant,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              isWorking ? 'Seul de garde cette nuit' : 'Aucune garde enregistrée pour l\'équipe cette nuit',
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 20),
-
-                    // Glass Action Buttons
-                    if (shift != null) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.edit_outlined, size: 18),
-                              label: const Text('Modifier'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(AppRadius.md),
-                                ),
-                              ),
-                              onPressed: () => _showEditShiftDialog(shift),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.delete_outline, size: 18),
-                              label: const Text('Supprimer'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.error,
-                                foregroundColor: AppColors.neonInk,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(AppRadius.md),
-                                ),
-                              ),
-                              onPressed: () => _confirmDeleteShift(shift),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ] else ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Ajouter une garde'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(AppRadius.md),
-                            ),
-                          ),
-                          onPressed: () => _showAddShiftDialog(dateKey),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _getVacationLabel(String vacationType) {
-    switch (vacationType) {
-      case 'CA':
-        return 'Congés Annuels (CA)';
-      case 'CET':
-        return 'Compte Épargne Temps (CET)';
-      case 'CFR':
-        return 'Congés Fractionnés (CFR)';
-      case 'REPOS':
-        return 'Jour de repos';
-      default:
-        return 'Vacances ($vacationType)';
+    } finally {
+      _sheetOpen = false;
     }
   }
 
-  Widget _buildSectionHeader(ThemeData theme, String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 14, color: theme.colorScheme.primary),
-        const SizedBox(width: 7),
-        Expanded(
-          child: TechLabel(
-            title,
-            size: 9,
-            color: theme.colorScheme.onSurface,
-            letterSpacing: 1.6,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColleagueBadge(ThemeData theme, TeamMember colleague) {
-    final isDark = theme.brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withValues(alpha: isDark ? 0.08 : 0.06),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.35),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _sheetMessage(ScrollController controller, String message) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      child: ListView(
+        controller: controller,
         children: [
-          InitialsAvatar(
-            name: colleague.trigramme.isNotEmpty
-                ? colleague.trigramme
-                : colleague.firstName,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            colleague.firstName,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
+          const SizedBox(height: 36),
+          Center(child: Text(message)),
         ],
       ),
     );
   }
 
-  Widget _buildDetailRow(
-    ThemeData theme,
-    IconData icon,
-    String label,
-    String value, {
-    Color? valueColor,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: 12),
-        Text(
-          '$label: ',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+  static DateTime _dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
+  static bool _belongsToUser(NightShift shift, UserConfig config) {
+    if (shift.agentId == config.userId) return true;
+    final agent = shift.agentTrigramme.trim().toUpperCase();
+    if (agent.isEmpty) return false;
+    final trigramme = config.userTrigramme.trim().toUpperCase();
+    final name = config.userName.trim().toUpperCase();
+    return (trigramme.isNotEmpty && agent == trigramme) ||
+        (name.isNotEmpty && agent == name);
+  }
+
+  static Map<DateTime, NightShift> _userShiftsByDay(
+    List<NightShift> shifts,
+    UserConfig config,
+  ) {
+    final result = <DateTime, NightShift>{};
+    for (final shift in shifts) {
+      if (!_belongsToUser(shift, config) ||
+          (!shift.isWorking && !shift.isVacation)) {
+        continue;
+      }
+      final date = _dateOnly(shift.date);
+      if (!result.containsKey(date) || shift.isWorking) result[date] = shift;
+    }
+    return result;
+  }
+
+  static List<TeamMember> _colleaguesForDay(
+    DateTime day,
+    NightShift? shift,
+    List<NightShift> allShifts,
+    UserConfig config,
+    List<TeamMember> members,
+  ) {
+    final ids = <String>{};
+    if (shift?.isWorking == true) {
+      ids.addAll(shift!.coWorkerIds);
+    } else {
+      ids.addAll(
+        allShifts
+            .where(
+              (item) =>
+                  item.isWorking &&
+                  isSameDay(item.date, day) &&
+                  !_belongsToUser(item, config),
+            )
+            .map((item) => item.agentId),
+      );
+    }
+    ids.removeWhere((id) {
+      final normalized = id.trim().toUpperCase();
+      final userTrigramme = config.userTrigramme.trim().toUpperCase();
+      return normalized.isEmpty ||
+          id == config.userId ||
+          (userTrigramme.isNotEmpty && normalized == userTrigramme);
+    });
+    return ids
+        .map(
+          (id) => members.firstWhere(
+            (member) => member.id == id || member.trigramme == id,
+            orElse: () =>
+                TeamMember(id: id, firstName: id, lastName: '', trigramme: id),
           ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              color: valueColor,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
+        )
+        .toList();
   }
 
   Widget _buildErrorState(Object error) {
@@ -867,11 +540,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.person_off_outlined, size: 64, color: Theme.of(context).colorScheme.primary),
+          Icon(
+            Icons.person_off_outlined,
+            size: 64,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           const SizedBox(height: 16),
-          TechLabel('Profil non configuré', size: 11, color: Theme.of(context).colorScheme.onSurface, letterSpacing: 2),
+          TechLabel(
+            'Profil non configuré',
+            size: 11,
+            color: Theme.of(context).colorScheme.onSurface,
+            letterSpacing: 2,
+          ),
           const SizedBox(height: 8),
-          Text('Configurez votre profil dans l\'onglet Import', style: Theme.of(context).textTheme.bodySmall),
+          Text(
+            'Configurez votre profil dans l\'onglet Import',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 16),
           GradientButton(
             label: 'Importer un planning',
@@ -900,10 +585,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   /// Création / modification manuelle d'une garde.
   ///
-  /// La garde est marquée `isManualOverride: true` et n'est jamais écrasée
-  /// silencieusement : un ré-import du même mois reste possible mais l'aperçu
-  /// affiche le même identifiant, donc la saisie manuelle est bien la dernière
-  /// opération enregistrée.
+  /// La garde est marquée `isManualOverride: true`. Un ré-import du même mois
+  /// peut la remplacer après la confirmation explicite de l'utilisateur.
   Future<void> _showShiftEditor({
     required DateTime date,
     NightShift? shift,
@@ -1024,13 +707,26 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         initialValue: vacationType,
-                        decoration:
-                            const InputDecoration(labelText: 'Type d\'absence'),
+                        decoration: const InputDecoration(
+                          labelText: 'Type d\'absence',
+                        ),
                         items: const [
-                          DropdownMenuItem(value: 'CA', child: Text('Congés annuels')),
-                          DropdownMenuItem(value: 'CET', child: Text('Compte épargne temps')),
-                          DropdownMenuItem(value: 'CFR', child: Text('Congés fractionnés')),
-                          DropdownMenuItem(value: 'REPOS', child: Text('Repos')),
+                          DropdownMenuItem(
+                            value: 'CA',
+                            child: Text('Congés annuels'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'CET',
+                            child: Text('Compte épargne temps'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'CFR',
+                            child: Text('Congés fractionnés'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'REPOS',
+                            child: Text('Repos'),
+                          ),
                         ],
                         onChanged: (value) {
                           if (value != null) {
@@ -1061,10 +757,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     if (shouldSave != true) return;
 
     final updated = NightShift(
-      id: '${config.userId}_${day.year}_${day.month}_${day.day}',
+      // Conserver l'identifiant d'une entrée existante, même si elle provient
+      // d'un ancien import dont l'id diffère de celui du profil actif.
+      id: shift?.id ?? '${config.userId}_${day.year}_${day.month}_${day.day}',
       date: day,
-      agentId: config.userId,
-      agentTrigramme: config.userTrigramme,
+      agentId: shift?.agentId ?? config.userId,
+      agentTrigramme: shift?.agentTrigramme ?? config.userTrigramme,
       startTime: startTime,
       endTime: endTime,
       isWorking: isWorking,
@@ -1088,7 +786,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isWorking ? 'Garde enregistrée' : 'Absence enregistrée'),
+          content: Text(
+            isWorking ? 'Garde enregistrée' : 'Absence enregistrée',
+          ),
           backgroundColor: AppColors.success,
         ),
       );
@@ -1096,11 +796,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }
 
   void _confirmDeleteShift(NightShift shift) {
+    final entry = shift.isWorking
+        ? 'la garde'
+        : shift.vacationType == 'REPOS'
+        ? 'le repos'
+        : 'le congé';
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Supprimer la garde'),
-        content: Text('Voulez-vous vraiment supprimer la garde du ${shift.date.day}/${shift.date.month} ?'),
+        title: Text('Supprimer $entry'),
+        content: Text(
+          'Voulez-vous vraiment supprimer $entry du ${shift.date.day}/${shift.date.month} ?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -1122,12 +829,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Future<void> _deleteShift(NightShift shift) async {
     final db = ref.read(databaseServiceProvider);
     await db.deleteNightShift(shift.id);
-    await NotificationService().cancelShiftNotification(shift.id);
+    try {
+      await NotificationService().cancelShiftNotification(shift.id);
+    } catch (error) {
+      debugPrint('Annulation du rappel impossible : $error');
+    }
     ref.invalidate(allNightShiftsProvider);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Garde supprimée')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Entrée supprimée')));
     }
   }
 }

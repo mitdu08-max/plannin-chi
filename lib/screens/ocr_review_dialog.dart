@@ -145,17 +145,26 @@ class _OcrReviewDialogState extends State<OcrReviewDialog> {
                         ),
                       ),
                     const SizedBox(height: 6),
-                    GridView.count(
-                      crossAxisCount: 7,
-                      mainAxisSpacing: 4,
-                      crossAxisSpacing: 4,
-                      primary: false,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        for (final entry in _review.days.entries)
-                          _dayCell(entry.key, entry.value, colorScheme),
-                      ],
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Garder des cases confortables même sur un téléphone
+                        // étroit, plutôt que de tasser sept colonnes illisibles.
+                        final columns = ((constraints.maxWidth + 4) / 52)
+                            .floor()
+                            .clamp(1, 7);
+                        return GridView.count(
+                          crossAxisCount: columns,
+                          mainAxisSpacing: 4,
+                          crossAxisSpacing: 4,
+                          primary: false,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            for (final entry in _review.days.entries)
+                              _dayCell(entry.key, entry.value, colorScheme),
+                          ],
+                        );
+                      },
                     ),
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
@@ -224,18 +233,23 @@ class _OcrReviewDialogState extends State<OcrReviewDialog> {
             _review.setDay(day, _selectedCode);
             _verified = false;
           }),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '$day',
-                style: TextStyle(
-                  color: foreground,
-                  fontWeight: FontWeight.bold,
-                ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$day',
+                    style: TextStyle(
+                      color: foreground,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(code, style: TextStyle(color: foreground, fontSize: 11)),
+                ],
               ),
-              Text(code, style: TextStyle(color: foreground, fontSize: 11)),
-            ],
+            ),
           ),
         ),
       ),

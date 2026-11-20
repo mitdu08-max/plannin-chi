@@ -514,8 +514,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     List<TeamMember> members,
   ) {
     final ids = <String>{};
-    if (shift?.isWorking == true) {
-      ids.addAll(shift!.coWorkerIds);
+    if (shift?.isWorking == true && shift!.coWorkerIds.isNotEmpty) {
+      ids.addAll(shift.coWorkerIds);
     } else {
       ids.addAll(
         allShifts

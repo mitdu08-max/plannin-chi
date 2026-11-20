@@ -35,6 +35,10 @@ class PlanningParseResult {
   /// Cases réellement reconnues par leurs coordonnées (les absentes sont inconnues).
   final Map<String, Map<int, String>> dayCodes;
 
+  /// Vrai lorsque la grille complète de l'équipe a été décodée par détection
+  /// colorimétrique des cellules (tous les jours 1..totalDays sont connus).
+  final bool isColorGrid;
+
   PlanningParseResult({
     required this.agentShifts,
     required this.agentVacations,
@@ -46,6 +50,7 @@ class PlanningParseResult {
     required this.rawText,
     this.ocrPages,
     this.dayCodes = const {},
+    this.isColorGrid = false,
   });
 
   bool get monthDetected => year != null && month != null;
@@ -61,6 +66,7 @@ class PlanningParseResult {
     int? month,
     int? totalDays,
     List<String>? warnings,
+    bool? isColorGrid,
   }) {
     return PlanningParseResult(
       agentShifts: agentShifts,
@@ -73,6 +79,7 @@ class PlanningParseResult {
       rawText: rawText,
       ocrPages: ocrPages,
       dayCodes: dayCodes,
+      isColorGrid: isColorGrid ?? this.isColorGrid,
     );
   }
 }
@@ -147,6 +154,7 @@ class PdfParserService {
     int? forcedMonth,
     List<String> knownAgents = AppConstants.knownAgentNames,
     List<List<PlanningOcrWord>>? ocrPages,
+    Map<String, Map<int, String>>? colorDayCodes,
   }) {
     // 1. Normalisation (on ne touche PAS aux retours à la ligne : ils
     // délimitent les lignes d'agents)
@@ -166,6 +174,60 @@ class PdfParserService {
     if (year == null || month == null) {
       warnings.add(
         'Le mois n\'a pas pu être déterminé automatiquement depuis le document.',
+      );
+    }
+
+    if (colorDayCodes != null && colorDayCodes.isNotEmpty) {
+      final positioned = ocrPages != null
+          ? PositionedPlanningParser.parse(ocrPages, totalDays: totalDays)
+          : null;
+
+      final mergedDayCodes = <String, Map<int, String>>{};
+      final agentShifts = <String, List<int>>{};
+      final agentVacations = <String, Map<int, String>>{};
+      final tokenCounts = <String, int>{};
+
+      for (final entry in colorDayCodes.entries) {
+        final agent = entry.key;
+        final ocrRow = positioned?.dayCodes[agent];
+        final rowMap = <int, String>{};
+        final days = <int>[];
+        final vacations = <int, String>{};
+
+        for (var day = 1; day <= totalDays; day++) {
+          var code = entry.value[day];
+          if (code == null) continue;
+          final ocrCode = ocrRow?[day];
+          // Affiner un congé vert ('CA') si l'OCR a lu 'CET' ou 'CFR'
+          if (code == 'CA' && (ocrCode == 'CET' || ocrCode == 'CFR')) {
+            code = ocrCode!;
+          } else if (code == 'F' && ocrCode == 'F_EXT') {
+            code = 'F_EXT';
+          }
+          rowMap[day] = code;
+          if (code == 'N') days.add(day);
+          if (_vacationCodes.contains(code)) vacations[day] = code;
+        }
+
+        days.sort();
+        mergedDayCodes[agent] = rowMap;
+        agentShifts[agent] = days;
+        if (vacations.isNotEmpty) agentVacations[agent] = vacations;
+        tokenCounts[agent] = rowMap.length;
+      }
+
+      return PlanningParseResult(
+        agentShifts: agentShifts,
+        agentVacations: agentVacations,
+        year: year,
+        month: month,
+        totalDays: totalDays,
+        warnings: warnings,
+        tokenCounts: tokenCounts,
+        rawText: rawText,
+        ocrPages: ocrPages,
+        dayCodes: mergedDayCodes,
+        isColorGrid: true,
       );
     }
 
@@ -448,6 +510,9 @@ class PdfParserService {
 
   /// Détecte le mois et l'année dans le texte. Renvoie `(null, null)` si le
   /// document ne les contient pas : il ne faut **jamais** inventer un mois.
+  static (int?, int?) detectMonthAndYear(String text) =>
+      _detectMonthAndYear(text);
+
   static (int?, int?) _detectMonthAndYear(String text) {
     final upperText = text.toUpperCase();
 

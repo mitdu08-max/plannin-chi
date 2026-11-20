@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/pdf_parser_service.dart';
 import '../services/ocr_parser_service.dart';
+import '../services/color_planning_parser.dart';
 import '../services/pdf_image_renderer.dart';
 import '../services/planning_day_review.dart';
 import '../services/notification_service.dart';
@@ -649,11 +650,22 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       );
       if (picked == null || !mounted) return;
       setProcessing(true, 'Nouvelle analyse avec le mois sélectionné...');
+      final targetTotalDays = DateTime(picked.$1, picked.$2 + 1, 0).day;
+      Map<String, Map<int, String>>? colorCodes;
+      if (imagePaths.isNotEmpty) {
+        final colorGrid = await ColorPlanningParser.parseImages(
+          imagePaths.map(File.new).toList(),
+          totalDays: targetTotalDays,
+          ocrPages: result.ocrPages,
+        );
+        colorCodes = colorGrid?.dayCodes;
+      }
       result = PdfParserService.parsePlanningText(
         result.rawText,
         forcedYear: picked.$1,
         forcedMonth: picked.$2,
         ocrPages: result.ocrPages,
+        colorDayCodes: colorCodes,
       );
       setProcessing(false, '');
     }
@@ -692,9 +704,10 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
     var resolvedAgent = manualAgent ??
         _resolveCurrentAgent(userConfig, agentShifts.keys.toList());
-    // Même une correspondance automatique de nom peut être fausse après OCR.
-    // La sélection explicite protège le profil et ses autres mois.
-    if (resolvedAgent == null || (result.isOcr && manualAgent == null)) {
+    // Si la grille colorée est complète et le profil utilisateur (ex: ARRAGAIN)
+    // est trouvé, on passe directement sans redemander de sélection manuelle.
+    if (resolvedAgent == null ||
+        (result.isOcr && !result.isColorGrid && manualAgent == null)) {
       final manualProfile = result.isOcr && userConfig != null
           ? (userConfig.userTrigramme.isNotEmpty
               ? userConfig.userTrigramme
@@ -711,8 +724,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     }
     final currentAgent = resolvedAgent;
 
-    var importTeam = !result.isOcr;
-    if (result.isOcr && agentShifts.length > 1) {
+    var importTeam = !result.isOcr || result.isColorGrid;
+    if (result.isOcr && !result.isColorGrid && agentShifts.length > 1) {
       final choice = await _showOcrImportScopeDialog(agentShifts.keys.toList());
       if (choice == null || !mounted) return;
       importTeam = choice;
@@ -747,9 +760,10 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               (candidate.trigramme.trim().toUpperCase() == label ||
                   candidate.id.trim().toUpperCase() == label);
         }).toList();
-        if (matches.length == 1 || (!result.isOcr && matches.isNotEmpty)) {
+        if (matches.length == 1 ||
+            ((!result.isOcr || result.isColorGrid) && matches.isNotEmpty)) {
           member = matches.first;
-        } else if (result.isOcr && teamMembers.isNotEmpty) {
+        } else if (result.isOcr && !result.isColorGrid && teamMembers.isNotEmpty) {
           member = await _showOcrAgentMapping(
             agent,
             teamMembers.where((candidate) => !usedIds.contains(candidate.id)).toList(),
@@ -770,9 +784,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     final currentUser = membersByAgent[currentAgent]!;
     final allTeamMembers = membersByAgent.values.toList();
 
-    if (result.isOcr) {
-      // La revue est obligatoire pour chaque ligne qui sera enregistrée. Cela
-      // évite d'importer les jours manquants comme du repos sans confirmation.
+    if (result.isOcr && !result.isColorGrid) {
+      // La revue est obligatoire pour chaque ligne qui sera enregistrée quand
+      // l'analyse colorimétrique n'a pas pu lire toutes les cellules.
       for (final agent in selectedAgents) {
         final member = membersByAgent[agent]!;
         final reviewLabel = member.trigramme == agent
@@ -809,22 +823,29 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
     final shiftStartTime = userConfig?.shiftStartTime ?? AppConstants.defaultShiftStartTime;
     final shiftEndTime = userConfig?.shiftEndTime ?? AppConstants.defaultShiftEndTime;
-    final previewItems = <PreviewNightItem>[];
-    for (final day in agentShifts[currentAgent] ?? const <int>[]) {
-      final coWorkers = importTeam
-          ? membersByAgent.entries
-              .where((entry) => entry.key != currentAgent &&
-                  (agentShifts[entry.key] ?? const <int>[]).contains(day))
-              .map((entry) => entry.value)
-              .toList()
-          : <TeamMember>[];
-      previewItems.add(
-        PreviewNightItem(date: DateTime(year, month, day), coWorkers: coWorkers),
-      );
-    }
-    final userVacations = agentVacations[currentAgent] ?? const <int, String>{};
 
-    final warnings = result.isOcr
+    List<PreviewNightItem> buildPreviewItems() {
+      final items = <PreviewNightItem>[];
+      for (final day in agentShifts[currentAgent] ?? const <int>[]) {
+        final coWorkers = importTeam
+            ? membersByAgent.entries
+                .where((entry) =>
+                    entry.key != currentAgent &&
+                    (agentShifts[entry.key] ?? const <int>[]).contains(day))
+                .map((entry) => entry.value)
+                .toList()
+            : <TeamMember>[];
+        items.add(
+          PreviewNightItem(date: DateTime(year, month, day), coWorkers: coWorkers),
+        );
+      }
+      return items;
+    }
+
+    var previewItems = buildPreviewItems();
+    var userVacations = agentVacations[currentAgent] ?? const <int, String>{};
+
+    final warnings = (result.isOcr && !result.isColorGrid)
         ? <String>[
             if (!importTeam)
               'Seul votre planning sera importé ; les collègues ne sont pas déduits de cette image.',
@@ -833,17 +854,52 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                 warning,
           ]
         : result.warnings;
-    final confirmed = await _showPreviewDialog(
-      agent: currentAgent,
-      previewItems: previewItems,
-      sourcePath: sourcePath,
-      userVacations: userVacations,
-      year: year,
-      month: month,
-      warnings: warnings,
-      colleaguesImported: importTeam,
-    );
-    if (!confirmed || !mounted) return;
+
+    while (true) {
+      var wantToEditDays = false;
+      final confirmed = await _showPreviewDialog(
+        agent: currentAgent,
+        previewItems: previewItems,
+        sourcePath: sourcePath,
+        userVacations: userVacations,
+        year: year,
+        month: month,
+        warnings: warnings,
+        colleaguesImported: importTeam,
+        onEditDays: () {
+          wantToEditDays = true;
+          Navigator.of(context).pop(false);
+        },
+      );
+      if (wantToEditDays && mounted) {
+        final totalMonthDays = DateTime(year, month + 1, 0).day;
+        final currentCodes = <int, String>{
+          for (var d = 1; d <= totalMonthDays; d++) d: 'R',
+          for (final d in agentShifts[currentAgent] ?? const <int>[]) d: 'N',
+          for (final e in userVacations.entries) e.key: e.value,
+        };
+        final reviewed = await showDialog<PlanningDayReview>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => OcrReviewDialog(
+            agent: currentAgent,
+            year: year,
+            month: month,
+            detectedCodes: currentCodes,
+            imagePaths: imagePaths,
+          ),
+        );
+        if (reviewed != null && mounted) {
+          agentShifts[currentAgent] = reviewed.workingDays;
+          agentVacations[currentAgent] = reviewed.vacations;
+          previewItems = buildPreviewItems();
+          userVacations = agentVacations[currentAgent] ?? const <int, String>{};
+        }
+        continue;
+      }
+      if (!confirmed || !mounted) return;
+      break;
+    }
 
     final existingCount = membersByAgent.values
         .map((member) => member.id)
@@ -1115,6 +1171,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     required int month,
     required List<String> warnings,
     required bool colleaguesImported,
+    VoidCallback? onEditDays,
   }) async {
     // Build combined list of preview items (night shifts + vacation days)
     final List<Map<String, dynamic>> allItems = [];
@@ -1317,6 +1374,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Annuler'),
           ),
+          if (onEditDays != null)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+              label: const Text('Corriger mes jours'),
+              onPressed: onEditDays,
+            ),
           ElevatedButton.icon(
             icon: const Icon(Icons.check),
             label: const Text('Valider et Enregistrer'),

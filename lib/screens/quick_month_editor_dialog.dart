@@ -122,8 +122,11 @@ class _QuickMonthEditorDialogState
       final startTime = userConfig.shiftStartTime;
       final endTime = userConfig.shiftEndTime;
 
-      // 1. Supprimer les anciennes gardes du mois
+      // 1. Supprimer les anciennes gardes de l'utilisateur pour ce mois
       await db.deleteNightShiftsForMonth(agentId, _year, _month);
+
+      // Récupérer les gardes des collègues déjà en base sur ce mois
+      final teamMonthShifts = db.getNightShiftsForMonth(_year, _month);
 
       // 2. Enregistrer les nuits et congés
       int nightsCount = 0;
@@ -135,6 +138,11 @@ class _QuickMonthEditorDialogState
 
         if (code == 'N') {
           nightsCount++;
+          final coWorkerIds = teamMonthShifts
+              .where((s) => s.agentId != agentId && s.date.day == day && s.isWorking)
+              .map((s) => s.agentId)
+              .toSet()
+              .toList();
           final shift = NightShift(
             id: '${agentId}_${_year}_${_month}_$day',
             date: DateTime(_year, _month, day),
@@ -143,6 +151,7 @@ class _QuickMonthEditorDialogState
             startTime: startTime,
             endTime: endTime,
             isWorking: true,
+            coWorkerIds: coWorkerIds,
             isManualOverride: true,
           );
           await db.saveNightShift(shift);

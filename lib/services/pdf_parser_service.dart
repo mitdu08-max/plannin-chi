@@ -380,16 +380,17 @@ class PdfParserService {
     return false;
   }
 
-  /// En-têtes de colonnes : "D01 L02 M03 ...", "S45", "Nov", "NOVEMBRE 2026"...
+  /// En-têtes de colonnes : "D01 L02 M03 ...", "Me01", "S45", "Nov", "NOVEMBRE 2026"...
   static bool _isHeaderLine(String upperLine) {
-    if (RegExp(r'^[DMLJVS]\d{2}\b').hasMatch(upperLine)) return true;
+    if (RegExp(r'^(?:[DMLJVS]|LU|MA|ME|JE|VE|SA|DI)\d{1,2}\b').hasMatch(upperLine)) return true;
     if (RegExp(r'^S\d{2}$').hasMatch(upperLine)) return true;
     // ligne composée uniquement de mois abrégés / n° de semaine
     if (RegExp(r'^(NOV|OCT|SEP|DEC|JAN|FEV|MAR|AVR|MAI|JUIN|JUIL|AOU|S\d{2})(\s|$)')
         .hasMatch(upperLine)) {
       return true;
     }
-    // une année seule
+    // une suite de numéros de jours ou une année seule
+    if (RegExp(r'^\d{1,2}(\s+\d{1,2})+$').hasMatch(upperLine)) return true;
     if (RegExp(r'^20\d{2}$').hasMatch(upperLine)) return true;
     return false;
   }

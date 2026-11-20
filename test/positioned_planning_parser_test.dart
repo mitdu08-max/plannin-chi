@@ -141,5 +141,46 @@ void main() {
       final result = PositionedPlanningParser.parse([words], totalDays: 31)!;
       expect(result.dayCodes['DUPONT'], {1: 'N', 29: 'N'});
     });
+
+    test('reconnaît les jours avec préfixe à 2 lettres (ex: Me01, Lu02, Ma03)', () {
+      final words = [
+        _word('Me01', 140, 40),
+        _word('Je02', 180, 40),
+        _word('Ve03', 220, 40),
+        _word('Sa04', 260, 40),
+        _word('Di05', 300, 40),
+        _word('Lu06', 340, 40),
+        _word('Ma07', 380, 40),
+        _word('DUPONT', 40, 110),
+        _word('N', 140, 110),
+        _word('RH', 180, 110),
+        _word('N', 260, 110),
+      ];
+      final result = PositionedPlanningParser.parse([words], totalDays: 30)!;
+      expect(result.dayCodes['DUPONT']![1], 'N');
+      expect(result.dayCodes['DUPONT']![2], 'RH');
+      expect(result.dayCodes['DUPONT']![4], 'N');
+    });
+
+    test('reconnaît les jours scindés en deux mots par l’OCR (ex: ME puis 01)', () {
+      final words = [
+        _word('ME', 135, 40, width: 8),
+        _word('01', 145, 40, width: 8),
+        _word('JE', 175, 40, width: 8),
+        _word('02', 185, 40, width: 8),
+        _word('VE', 215, 40, width: 8),
+        _word('03', 225, 40, width: 8),
+        _word('SA', 255, 40, width: 8),
+        _word('04', 265, 40, width: 8),
+        _word('DI', 295, 40, width: 8),
+        _word('05', 305, 40, width: 8),
+        _word('DUPONT', 40, 110),
+        _word('N', 140, 110),
+        _word('CA', 180, 110),
+      ];
+      final result = PositionedPlanningParser.parse([words], totalDays: 30)!;
+      expect(result.dayCodes['DUPONT']![1], 'N');
+      expect(result.dayCodes['DUPONT']![2], 'CA');
+    });
   });
 }

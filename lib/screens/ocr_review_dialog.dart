@@ -184,12 +184,24 @@ class _OcrReviewDialogState extends State<OcrReviewDialog> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Wrap(
                 alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Annuler'),
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.done_all, size: 18),
+                    label: const Text('Valider (reste en repos)'),
+                    onPressed: () {
+                      setState(() {
+                        _review.markUnresolvedAsOther();
+                        _verified = true;
+                      });
+                      Navigator.of(context).pop(_review);
+                    },
                   ),
                   ElevatedButton(
                     onPressed: _review.isComplete && _verified

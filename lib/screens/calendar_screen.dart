@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
 import 'calendar_day_sheet.dart';
 import 'import_screen.dart';
+import 'quick_month_editor_dialog.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key, this.initialDay});
@@ -47,6 +48,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       appBar: AppBar(
         title: const Text('Calendrier'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_calendar),
+            onPressed: () => showDialog<bool>(
+              context: context,
+              builder: (_) => QuickMonthEditorDialog(
+                initialYear: _focusedDay.year,
+                initialMonth: _focusedDay.month,
+              ),
+            ),
+            tooltip: 'Saisie rapide du mois',
+          ),
           IconButton(
             icon: const Icon(Icons.today),
             onPressed: _goToToday,

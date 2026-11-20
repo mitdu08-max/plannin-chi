@@ -13,6 +13,7 @@ import '../services/pdf_image_renderer.dart';
 import '../services/planning_day_review.dart';
 import '../services/notification_service.dart';
 import 'ocr_review_dialog.dart';
+import 'quick_month_editor_dialog.dart';
 import '../constants/app_constants.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
@@ -225,6 +226,26 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           title: 'Prendre une photo',
           subtitle: 'Photographier le planning directement (OCR)',
           onTap: () => _pickAndParseImage(fromGallery: false),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Quick Month Manual Entry
+        _buildImportOption(
+          context,
+          icon: Icons.edit_calendar_outlined,
+          title: 'Saisie rapide d’un mois',
+          subtitle: 'Remplir ou corriger directement les nuits d’un mois',
+          onTap: () {
+            final now = DateTime.now();
+            showDialog<bool>(
+              context: context,
+              builder: (_) => QuickMonthEditorDialog(
+                initialYear: now.year,
+                initialMonth: now.month,
+              ),
+            );
+          },
         ),
       ],
     );
@@ -764,12 +785,21 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             imagePaths: imagePaths,
           ),
         );
-        if (reviewed == null || !mounted) return;
+        if (reviewed == null || !mounted) {
+          // Si l'utilisateur annule sur un collègue après avoir validé son propre planning,
+          // on conserve son planning personnel au lieu de tout annuler.
+          if (agent != currentAgent && agentShifts.containsKey(currentAgent)) {
+            importTeam = false;
+            break;
+          }
+          return;
+        }
         agentShifts[agent] = reviewed.workingDays;
         agentVacations[agent] = reviewed.vacations;
       }
-    } else if ((agentShifts[currentAgent] ?? const <int>[]).isEmpty) {
-      _showErrorSnackBar('Aucune nuit de garde détectée pour $currentAgent.');
+    } else if ((agentShifts[currentAgent] ?? const <int>[]).isEmpty &&
+               (agentVacations[currentAgent] ?? const <int, String>{}).isEmpty) {
+      _showErrorSnackBar('Aucune nuit de garde ni congé détecté pour $currentAgent.');
       return;
     }
 
@@ -858,13 +888,14 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Annuler'),
             ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Mon planning'),
-            ),
-            ElevatedButton(
+            OutlinedButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Toute l’équipe'),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.person, size: 18),
+              onPressed: () => Navigator.of(context).pop(false),
+              label: const Text('Mon planning uniquement'),
             ),
           ],
         ),
@@ -1320,7 +1351,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       // 2. Import des gardes et congés pour TOUS les agents
       if (allAgentShifts != null && allAgentShifts.isNotEmpty) {
         for (final entry in allAgentShifts.entries) {
-          final member = membersByAgent[entry.key]!;
+          final member = membersByAgent[entry.key];
+          if (member == null) continue;
           final agentId = member.id;
           final agentDays = entry.value;
           final isCurrent = entry.key == currentAgent;
@@ -1334,7 +1366,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             final date = DateTime(year, month, day);
             final coWorkerIds = allAgentShifts.entries
                 .where((e) => e.key != entry.key && e.value.contains(day))
-                .map((e) => membersByAgent[e.key]!.id)
+                .map((e) => membersByAgent[e.key]?.id)
+                .whereType<String>()
                 .toList();
 
             final shift = NightShift(

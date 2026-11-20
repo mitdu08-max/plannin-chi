@@ -181,7 +181,7 @@ class DatabaseService {
             shift.agentId == agentId &&
             shift.date.year == year &&
             shift.date.month == month)
-        .map((shift) => shift.key as String)
+        .map((shift) => shift.key)
         .toList();
 
     for (final key in keys) {

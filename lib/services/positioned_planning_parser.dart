@@ -137,8 +137,8 @@ class PositionedPlanningParser {
       ).hasMatch(label);
       final isNumber = RegExp(r'^\d{1,3}$').hasMatch(label);
       return (isName || isNumber) &&
-          word.centerX < columns.centers.first - columns.step * 0.55 &&
-          word.centerY > columns.headerY + columns.step * 0.75;
+          word.centerX < columns.centers.first - columns.step * 0.40 &&
+          word.centerY > columns.headerY + columns.step * 0.70;
     }).toList()..sort((a, b) => a.centerY.compareTo(b.centerY));
 
     final labelRows = <List<PlanningOcrWord>>[];
@@ -223,14 +223,59 @@ class PositionedPlanningParser {
 
   static _Columns? _findColumns(List<PlanningOcrWord> words, int totalDays) {
     final candidates = <_DayAnchor>[];
-    for (final word in words) {
-      // Une étiquette comme "M07" est parfois lue "MO7" par l'OCR.
+
+    // Motif tolérant : préfixe jour facultatif (1, 2 ou 3 lettres) + numéro de jour (1 ou 2 chiffres).
+    // Supporte : J01, V02, M07, Me01, Mer01, Lu02, Ma03, Di05, D5, 01, 1, etc.
+    final dayRegex = RegExp(
+      r'^(?:LUN|MAR|MER|JEU|VEN|SAM|DIM|LU|MA|ME|JE|VE|SA|DI|[LMDJVS])?([0-3]?[0-9])$',
+    );
+
+    const frenchDayPrefixes = {
+      'L', 'LU', 'LUN', 'LUNDI',
+      'M', 'MA', 'MAR', 'MARDI',
+      'ME', 'MER', 'MERCREDI',
+      'J', 'JE', 'JEU', 'JEUDI',
+      'V', 'VE', 'VEN', 'VENDREDI',
+      'S', 'SA', 'SAM', 'SAMEDI',
+      'D', 'DI', 'DIM', 'DIMANCHE',
+    };
+
+    for (var i = 0; i < words.length; i++) {
+      final word = words[i];
       final value = word.text.trim().toUpperCase().replaceAll('O', '0');
-      final match = RegExp(r'^[LMDJVS]([0-3][0-9])$').firstMatch(value);
-      if (match == null) continue;
-      final day = int.parse(match.group(1)!);
-      if (day < 1 || day > totalDays) continue;
-      candidates.add(_DayAnchor(day, word.centerX, word.centerY, word.height));
+
+      // 1. Mot unique correspondant au motif du jour
+      final match = dayRegex.firstMatch(value);
+      if (match != null) {
+        final day = int.tryParse(match.group(1)!);
+        if (day != null && day >= 1 && day <= totalDays) {
+          candidates.add(_DayAnchor(day, word.centerX, word.centerY, word.height));
+          continue;
+        }
+      }
+
+      // 2. Deux mots scindés par l'OCR : [Préfixe jour] suivi de [Numéro du jour]
+      // Ex: "ME" puis "01", ou "Mer" puis "1"
+      if (frenchDayPrefixes.contains(value) && i + 1 < words.length) {
+        final nextWord = words[i + 1];
+        final nextVal = nextWord.text.trim().toUpperCase().replaceAll('O', '0');
+        final nextMatch = RegExp(r'^([0-3]?[0-9])$').firstMatch(nextVal);
+        if (nextMatch != null) {
+          final day = int.tryParse(nextMatch.group(1)!);
+          final sameY = (word.centerY - nextWord.centerY).abs() <=
+              math.max(word.height, nextWord.height) * 1.5;
+          final closeX = (nextWord.left - (word.left + word.width)).abs() <=
+              math.max(word.width, nextWord.width) * 2.5;
+          if (day != null && day >= 1 && day <= totalDays && sameY && closeX) {
+            final combinedCenterX = (word.centerX + nextWord.centerX) / 2;
+            final combinedCenterY = (word.centerY + nextWord.centerY) / 2;
+            final combinedHeight = math.max(word.height, nextWord.height);
+            candidates.add(
+              _DayAnchor(day, combinedCenterX, combinedCenterY, combinedHeight),
+            );
+          }
+        }
+      }
     }
     if (candidates.length < 4) return null;
 
@@ -252,7 +297,7 @@ class PositionedPlanningParser {
     }
     // Trop peu de points ou une petite portion de mois ne permettent pas de
     // déterminer les colonnes de manière fiable.
-    if (best.length < 4 || best.last.day - best.first.day < 10) return null;
+    if (best.length < 4 || best.last.day - best.first.day < 3) return null;
 
     final steps = <double>[];
     for (var i = 1; i < best.length; i++) {

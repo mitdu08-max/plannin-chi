@@ -169,41 +169,68 @@ class PositionedPlanningParser {
       if (nameParts.contains('NOM') || nameParts.contains('PRÉNOM')) continue;
 
       final rowY = _averageY(labelRow);
-      var tolerance = columns.step * 0.44;
+      final avgRowHeight = math.max(
+        labelRow.map((w) => w.height).reduce(math.max),
+        columns.step * 0.6,
+      );
+      var tolerance = avgRowHeight * 0.90;
       if (rowIndex > 0) {
         tolerance = math.min(
           tolerance,
-          (rowY - _averageY(labelRows[rowIndex - 1])).abs() * 0.45,
+          (rowY - _averageY(labelRows[rowIndex - 1])).abs() * 0.48,
         );
       }
       if (rowIndex + 1 < labelRows.length) {
         tolerance = math.min(
           tolerance,
-          (_averageY(labelRows[rowIndex + 1]) - rowY).abs() * 0.45,
+          (_averageY(labelRows[rowIndex + 1]) - rowY).abs() * 0.48,
         );
       }
 
       final cells = <int, String>{};
       final conflicts = <int>{};
       for (final word in words) {
-        if ((word.centerY - rowY).abs() > tolerance ||
-            word.width > columns.step * 1.35) {
+        if ((word.centerY - rowY).abs() > tolerance) {
           continue;
         }
-        final code = word.text.trim().toUpperCase().replaceAll(' ', '_');
-        if (!supportedCodes.contains(code)) continue;
-        final day = columns.dayForX(word.centerX);
-        if (day == null || conflicts.contains(day)) continue;
-        final previous = cells[day];
-        if (previous != null && previous != code) {
-          cells.remove(day);
-          conflicts.add(day);
+        // Doit se situer dans la zone des colonnes du calendrier
+        if (word.centerX < columns.centers.first - columns.step * 0.45) {
+          continue;
+        }
+
+        final tokens = _tokenizeCellText(word.text);
+        if (tokens.isEmpty) continue;
+
+        if (tokens.length == 1) {
+          final code = tokens.first;
+          final day = columns.dayForX(word.centerX);
+          if (day == null || conflicts.contains(day)) continue;
+          final previous = cells[day];
+          if (previous != null && previous != code) {
+            cells.remove(day);
+            conflicts.add(day);
+          } else {
+            cells[day] = code;
+          }
         } else {
-          cells[day] = code;
+          // Si l'OCR a regroupé plusieurs cellules adjacentes dans un seul mot
+          for (var k = 0; k < tokens.length; k++) {
+            final code = tokens[k];
+            final tokenX = word.left + (k + 0.5) * (word.width / tokens.length);
+            final day = columns.dayForX(tokenX);
+            if (day == null || conflicts.contains(day)) continue;
+            final previous = cells[day];
+            if (previous != null && previous != code) {
+              cells.remove(day);
+              conflicts.add(day);
+            } else {
+              cells[day] = code;
+            }
+          }
         }
       }
       // Écarte les légendes et signatures qui ressemblent à un nom d'agent.
-      if (cells.length < 2) continue;
+      if (cells.isEmpty) continue;
       final previousRow = results[name];
       if (previousRow != null) {
         // Deux lignes du même nom sur une page sont ambiguës : ne pas fusionner
@@ -219,6 +246,67 @@ class PositionedPlanningParser {
     return results.isEmpty
         ? null
         : _PageResult(results, rowConflicts, duplicateNames);
+  }
+
+  static List<String> _tokenizeCellText(String raw) {
+    var text = raw.trim().toUpperCase().replaceAll('\u00A0', ' ');
+    text = text.replaceAll(RegExp(r'F\s+EXT', caseSensitive: false), 'F_EXT');
+    text = text.replaceAll(RegExp(r'FEXT', caseSensitive: false), 'F_EXT');
+    text = text.replaceAll(RegExp(r'R\s+H', caseSensitive: false), 'RH');
+    text = text.replaceAll(RegExp(r'C\s+A', caseSensitive: false), 'CA');
+    text = text.replaceAll(RegExp(r'C\s+ET', caseSensitive: false), 'CET');
+    text = text.replaceAll(RegExp(r'C\s+FR', caseSensitive: false), 'CFR');
+
+    // Retirer la ponctuation parasite introduite par l'OCR
+    text = text.replaceAll(RegExp(r'[.,;:|!_\-]+'), ' ');
+
+    final tokens = <String>[];
+    final parts = text.split(RegExp(r'\s+'));
+
+    for (final part in parts) {
+      if (part.isEmpty) continue;
+
+      final normalized = _normalizeCode(part);
+      if (normalized != null) {
+        tokens.add(normalized);
+        continue;
+      }
+
+      // Mot contenant plusieurs codes collés (ex: "NRHRH" ou "RRRNN")
+      var sub = part;
+      while (sub.isNotEmpty) {
+        var matched = false;
+        for (final code in ['F_EXT', 'CET', 'CFR', 'RH', 'CA', 'CS', 'FC', 'N', 'R', 'F', 'J']) {
+          if (sub.startsWith(code)) {
+            tokens.add(code);
+            sub = sub.substring(code.length);
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          sub = sub.substring(1);
+        }
+      }
+    }
+    return tokens;
+  }
+
+  static String? _normalizeCode(String code) {
+    if (supportedCodes.contains(code)) return code;
+    if (const {
+      '10H', '12H', '11H', '20H', '19H', '7H',
+      'NUIT', 'GARDE', 'SERVICE', 'POSTE', 'NIGHT', 'G'
+    }.contains(code)) {
+      return 'N';
+    }
+    if (const {'REPOS', 'OFF', 'LIBRE', 'MALADIE', 'ABS', 'ABSENCE', 'X', 'P', 'B'}.contains(code)) {
+      return 'R';
+    }
+    if (const {'CONGE', 'CONGÉ', 'VAC', 'VACANCES', 'RTT'}.contains(code)) {
+      return 'CA';
+    }
+    return null;
   }
 
   static _Columns? _findColumns(List<PlanningOcrWord> words, int totalDays) {

@@ -182,5 +182,21 @@ void main() {
       expect(result.dayCodes['DUPONT']![1], 'N');
       expect(result.dayCodes['DUPONT']![2], 'CA');
     });
+
+    test('découpe et positionne les cellules groupées par l’OCR (ex: "N N" ou "R RH")', () {
+      final words = [
+        ..._header(),
+        _word('DUPONT', 40, 110),
+        // Deux jours de nuit groupés par l'OCR sur les colonnes 1 et 2 (x: 140 à 180)
+        _word('N N', 160, 110, width: 80),
+        // Repos et congé groupés sur les colonnes 4 et 5 (x: 260 à 300)
+        _word('R CA', 280, 110, width: 80),
+      ];
+      final result = PositionedPlanningParser.parse([words], totalDays: 31)!;
+      expect(result.dayCodes['DUPONT']![1], 'N');
+      expect(result.dayCodes['DUPONT']![2], 'N');
+      expect(result.dayCodes['DUPONT']![4], 'R');
+      expect(result.dayCodes['DUPONT']![5], 'CA');
+    });
   });
 }

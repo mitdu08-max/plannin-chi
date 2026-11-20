@@ -551,8 +551,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       final upper = agent.toUpperCase();
       if (trigramme.isNotEmpty && upper == trigramme) return agent;
       if (name.isNotEmpty && upper == name) return agent;
-      // tolérance : "DUPONT" saisi pour l'agent "DUPONT J." ou inverse
+      // Tolérance bi-directionnelle : "DUPONT" vs "DUPONT J."
       if (name.length >= 3 && upper.startsWith(name)) return agent;
+      if (upper.length >= 3 && name.startsWith(upper)) return agent;
+      if (name.length >= 4 && (upper.contains(name) || name.contains(upper))) {
+        return agent;
+      }
     }
     return null;
   }

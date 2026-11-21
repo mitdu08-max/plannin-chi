@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/pdf_export_service.dart';
 import '../services/statistics_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_widgets.dart';
@@ -105,6 +106,16 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       if (_scope == StatisticsScope.personal) ...[
                         // Summary Cards
                         _buildSummaryCards(theme, userShifts, userConfig),
+
+                        const SizedBox(height: 14),
+
+                        // Barre d'export PDF personnel
+                        _buildPersonalPdfCard(
+                          theme,
+                          allShifts,
+                          teamMembers,
+                          userConfig,
+                        ),
 
                         const SizedBox(height: 24),
 
@@ -896,14 +907,28 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     OutlinedButton.icon(
                       onPressed: () => _copyTeamSummary(summary),
-                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      icon: const Icon(Icons.copy_rounded, size: 15),
                       label: const Text('Copier'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    ElevatedButton.icon(
+                      onPressed: () =>
+                          _showTeamPdfActionsSheet(theme, summary),
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
+                      label: const Text('PDF'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
                           vertical: 8,
                         ),
                         visualDensity: VisualDensity.compact,
@@ -1468,6 +1493,32 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     const SizedBox(height: 8),
                     _buildMonthCoverageStrip(theme, stat.coveredMonths),
                   ],
+                  const SizedBox(height: 22),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            _exportAgentPdf(stat, share: false);
+                          },
+                          icon: const Icon(Icons.download_rounded, size: 17),
+                          label: const Text('Enregistrer PDF'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            _exportAgentPdf(stat, share: true);
+                          },
+                          icon: const Icon(Icons.share_outlined, size: 17),
+                          label: const Text('Envoyer PDF'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -1475,6 +1526,258 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         );
       },
     );
+  }
+
+  Widget _buildPersonalPdfCard(
+    ThemeData theme,
+    List<NightShift> allShifts,
+    List<TeamMember> teamMembers,
+    UserConfig userConfig,
+  ) {
+    final summary = StatisticsService.getTeamStatistics(
+      allShifts: allShifts,
+      allTeamMembers: teamMembers,
+      year: _selectedYear,
+      month: _period == StatisticsPeriod.month ? _selectedMonth : null,
+      shiftDurationHours: userConfig.shiftDurationHours.toDouble(),
+    );
+
+    final myStat = summary.agentStats.firstWhere(
+      (s) =>
+          s.teamMember.id == userConfig.userId ||
+          (userConfig.userTrigramme.isNotEmpty &&
+              s.trigramme.toUpperCase() ==
+                  userConfig.userTrigramme.toUpperCase()),
+      orElse: () => AgentPeriodStats(
+        teamMember: TeamMember(
+          id: userConfig.userId,
+          firstName: userConfig.userName,
+          lastName: '',
+          trigramme: userConfig.userTrigramme,
+        ),
+        totalNights: 0,
+        totalHours: 0,
+        weekendAnalysis: WeekendAnalysis(
+          fullWeekendsWorked: 0,
+          halfWeekendsWorked: 0,
+          fullWeekendsRest: 0,
+        ),
+        weekdayCounts: const {},
+      ),
+    );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.picture_as_pdf_outlined,
+              size: 20,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _period == StatisticsPeriod.year
+                    ? 'Ma fiche annuelle $_selectedYear (PDF)'
+                    : 'Ma fiche ${_getMonthName(_selectedMonth)} (PDF)',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _exportAgentPdf(myStat, share: false),
+              icon: const Icon(Icons.download_rounded, size: 15),
+              label: const Text('Sauver'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 6),
+            ElevatedButton.icon(
+              onPressed: () => _exportAgentPdf(myStat, share: true),
+              icon: const Icon(Icons.share_outlined, size: 15),
+              label: const Text('Envoyer'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTeamPdfActionsSheet(ThemeData theme, TeamPeriodSummary summary) {
+    final periodTitle = _period == StatisticsPeriod.month
+        ? '${_getMonthName(_selectedMonth)} $_selectedYear'
+        : 'Année $_selectedYear';
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Exporter le Bilan PDF — $periodTitle',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Génère le document officiel récapitulatif de toute l\'équipe (nuits, heures, week-ends, congés et détail mensuel).',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    _exportTeamPdf(summary, share: true);
+                  },
+                  icon: const Icon(Icons.share_outlined),
+                  label: const Text(
+                    'Envoyer / Partager le PDF Équipe (WhatsApp, Mail...)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    _exportTeamPdf(summary, share: false);
+                  },
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text(
+                    'Enregistrer le PDF Équipe dans Téléchargements',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _exportTeamPdf(
+    TeamPeriodSummary summary, {
+    required bool share,
+  }) async {
+    try {
+      final bytes = PdfExportService.generateTeamReportPdf(summary);
+      final fileName = PdfExportService.buildTeamFileName(summary);
+      final title = summary.month != null
+          ? 'Bilan Équipe ${_getMonthName(summary.month!)} ${summary.year}'
+          : 'Bilan Équipe Année ${summary.year}';
+
+      if (share) {
+        await PdfExportService.sharePdf(
+          bytes: bytes,
+          fileName: fileName,
+          title: title,
+        );
+      } else {
+        final savedPath = await PdfExportService.savePdfToDevice(
+          bytes: bytes,
+          fileName: fileName,
+        );
+        if (!mounted || savedPath == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.success,
+            content: Text(
+              'PDF enregistré : $savedPath',
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text('Erreur lors de l\'export PDF : $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportAgentPdf(
+    AgentPeriodStats stat, {
+    required bool share,
+  }) async {
+    try {
+      final month = _period == StatisticsPeriod.month ? _selectedMonth : null;
+      final bytes = PdfExportService.generateAgentReportPdf(
+        stat: stat,
+        year: _selectedYear,
+        month: month,
+      );
+      final fileName = PdfExportService.buildAgentFileName(
+        stat,
+        _selectedYear,
+        month: month,
+      );
+      final title = month != null
+          ? 'Fiche ${stat.displayName} - ${_getMonthName(month)} $_selectedYear'
+          : 'Fiche Annuelle ${stat.displayName} - $_selectedYear';
+
+      if (share) {
+        await PdfExportService.sharePdf(
+          bytes: bytes,
+          fileName: fileName,
+          title: title,
+        );
+      } else {
+        final savedPath = await PdfExportService.savePdfToDevice(
+          bytes: bytes,
+          fileName: fileName,
+        );
+        if (!mounted || savedPath == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.success,
+            content: Text(
+              'Fiche PDF enregistrée : $savedPath',
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text('Erreur lors de l\'export PDF : $e'),
+        ),
+      );
+    }
   }
 
   void _goToPreviousPeriod() {

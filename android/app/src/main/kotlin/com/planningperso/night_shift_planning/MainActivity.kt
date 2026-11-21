@@ -1,11 +1,18 @@
 package com.planningperso.night_shift_planning
 
+import android.content.ClipData
+import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,6 +29,75 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.planningperso.night_shift_planning/pdf_export"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "savePdfToDownloads" -> {
+                    val fileName = call.argument<String>("fileName") ?: "Bilan_Planning_CHI.pdf"
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes == null || bytes.isEmpty()) {
+                        result.error("invalid_pdf", "Contenu PDF vide.", null)
+                        return@setMethodCallHandler
+                    }
+                    pdfExecutor.execute {
+                        try {
+                            val savedLocation = savePdfToDownloads(fileName, bytes)
+                            mainHandler.post { result.success(savedLocation) }
+                        } catch (error: Exception) {
+                            mainHandler.post {
+                                result.error("save_failed", error.message ?: "Impossible d'enregistrer le PDF.", null)
+                            }
+                        }
+                    }
+                }
+                "sharePdf" -> {
+                    val fileName = call.argument<String>("fileName") ?: "Bilan_Planning_CHI.pdf"
+                    val title = call.argument<String>("title") ?: "Bilan Planning CHI"
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes == null || bytes.isEmpty()) {
+                        result.error("invalid_pdf", "Contenu PDF vide.", null)
+                        return@setMethodCallHandler
+                    }
+                    pdfExecutor.execute {
+                        try {
+                            val shareDir = File(cacheDir, "shared_pdfs")
+                            if (!shareDir.exists() && !shareDir.mkdirs()) {
+                                throw IllegalStateException("Impossible de créer le dossier de partage.")
+                            }
+                            shareDir.listFiles()?.forEach { it.delete() }
+                            val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                            val pdfFile = File(shareDir, safeName)
+                            pdfFile.writeBytes(bytes)
+
+                            val uri = FileProvider.getUriForFile(
+                                this@MainActivity,
+                                "${applicationContext.packageName}.fileprovider",
+                                pdfFile
+                            )
+                            mainHandler.post {
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    putExtra(Intent.EXTRA_SUBJECT, title)
+                                    putExtra(Intent.EXTRA_TEXT, title)
+                                    clipData = ClipData.newRawUri(safeName, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                startActivity(Intent.createChooser(sendIntent, title))
+                                result.success(true)
+                            }
+                        } catch (error: Exception) {
+                            mainHandler.post {
+                                result.error("share_failed", error.message ?: "Impossible de partager le PDF.", null)
+                            }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.planningperso.night_shift_planning/pdf_ocr"
@@ -101,6 +177,39 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun savePdfToDownloads(fileName: String, bytes: ByteArray): String {
+        val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val resolver = applicationContext.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Impossible de créer le fichier dans Téléchargements.")
+            try {
+                resolver.openOutputStream(uri)?.use { out ->
+                    out.write(bytes)
+                } ?: throw IllegalStateException("Flux d'écriture indisponible.")
+                val doneValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                resolver.update(uri, doneValues, null, null)
+                return "Téléchargements/$safeName"
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                throw e
+            }
+        } else {
+            val dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+            val outFile = File(dir, safeName)
+            outFile.writeBytes(bytes)
+            return outFile.absolutePath
         }
     }
 

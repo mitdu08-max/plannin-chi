@@ -392,6 +392,26 @@ class StatisticsService {
         }
       }
 
+      final monthlyNights = <int, int>{for (var m = 1; m <= 12; m++) m: 0};
+      final monthlyHours = <int, double>{for (var m = 1; m <= 12; m++) m: 0.0};
+      final monthlyVacations = <int, int>{for (var m = 1; m <= 12; m++) m: 0};
+      final monthlyWeekends = <int, WeekendAnalysis>{};
+
+      for (final s in agentAllShifts) {
+        if (s.date.year != year) continue;
+        final m = s.date.month;
+        if (s.isWorking) {
+          monthlyNights[m] = (monthlyNights[m] ?? 0) + 1;
+          monthlyHours[m] =
+              (monthlyHours[m] ?? 0.0) + _shiftHours(s, shiftDurationHours);
+        } else if (s.isVacation) {
+          monthlyVacations[m] = (monthlyVacations[m] ?? 0) + 1;
+        }
+      }
+      for (var m = 1; m <= 12; m++) {
+        monthlyWeekends[m] = analyzeWeekendsMonth(agentAllShifts, year, m);
+      }
+
       agentStats.add(
         AgentPeriodStats(
           teamMember: member,
@@ -401,6 +421,10 @@ class StatisticsService {
           vacationDays: vacationDays,
           weekdayCounts: weekdayCounts,
           coveredMonths: coveredMonths,
+          monthlyNights: monthlyNights,
+          monthlyHours: monthlyHours,
+          monthlyVacations: monthlyVacations,
+          monthlyWeekends: monthlyWeekends,
         ),
       );
     }
@@ -511,6 +535,10 @@ class AgentPeriodStats {
   final int vacationDays;
   final Map<int, int> weekdayCounts;
   final Set<int> coveredMonths;
+  final Map<int, int> monthlyNights;
+  final Map<int, double> monthlyHours;
+  final Map<int, int> monthlyVacations;
+  final Map<int, WeekendAnalysis> monthlyWeekends;
 
   AgentPeriodStats({
     required this.teamMember,
@@ -520,6 +548,10 @@ class AgentPeriodStats {
     this.vacationDays = 0,
     required this.weekdayCounts,
     this.coveredMonths = const {},
+    this.monthlyNights = const {},
+    this.monthlyHours = const {},
+    this.monthlyVacations = const {},
+    this.monthlyWeekends = const {},
   });
 
   String get displayName {
@@ -558,6 +590,9 @@ class TeamPeriodSummary {
 
   double get totalTeamHours =>
       agentStats.fold<double>(0.0, (sum, s) => sum + s.totalHours);
+
+  int get totalTeamVacations =>
+      agentStats.fold<int>(0, (sum, s) => sum + s.vacationDays);
 
   int get activeAgentsCount =>
       agentStats.where((s) => s.totalNights > 0 || s.vacationDays > 0).length;

@@ -90,6 +90,9 @@ void main() {
     expect(find.text('24h'), findsOneWidget);
     expect(find.text('60h'), findsOneWidget); // Total heures équipe
 
+    // Vérifier la présence du bouton PDF équipe
+    expect(find.text('PDF'), findsOneWidget);
+
     // Toucher ARRAGAIN pour ouvrir la fiche détail
     await tester.ensureVisible(find.text('ARRAGAIN'));
     await tester.pumpAndSettle();
@@ -100,5 +103,7 @@ void main() {
     expect(find.text('COMPLETS'), findsOneWidget);
     expect(find.text('DEMI WE'), findsOneWidget);
     expect(find.text('REPOS WE'), findsOneWidget);
+    expect(find.text('Enregistrer PDF'), findsOneWidget);
+    expect(find.text('Envoyer PDF'), findsOneWidget);
   });
 }

@@ -258,11 +258,15 @@ class StatisticsService {
     List<TeamMember> allTeamMembers, {
     double shiftDurationHours = 10.0,
   }) {
+    final yearlyShifts = shifts.where((s) => s.date.year == year).toList();
     final weekdayCounts = countNightsPerWeekdayYear(shifts, year);
     final weekendAnalysis = analyzeWeekendsYear(shifts, year);
-    final topTeammates = getTopTeammates(shifts, currentUserId, allTeamMembers);
-    final totalHours = calculateYearlyHours(shifts, year, shiftDurationHours: shiftDurationHours);
-    final totalNights = shifts.where((s) => s.date.year == year && s.isWorking).length;
+    final topTeammates =
+        getTopTeammates(yearlyShifts, currentUserId, allTeamMembers);
+    final totalHours =
+        calculateYearlyHours(shifts, year, shiftDurationHours: shiftDurationHours);
+    final totalNights =
+        yearlyShifts.where((s) => s.isWorking).length;
 
     // Monthly breakdown
     final monthlyBreakdown = <int, MonthlyStatistics>{};
@@ -283,6 +287,285 @@ class StatisticsService {
       monthlyBreakdown: monthlyBreakdown,
     );
   }
+
+  /// Formate un total d'heures de manière lisible (ex: `1452h` ou `1452.5h`).
+  static String formatHours(double hours) {
+    if ((hours - hours.roundToDouble()).abs() < 0.05) {
+      return '${hours.round()}h';
+    }
+    return '${hours.toStringAsFixed(1)}h';
+  }
+
+  /// Calcule le bilan comparatif de chaque membre de l'équipe sur un mois
+  /// ([month] non nul) ou sur une année complète ([month] == null).
+  static TeamPeriodSummary getTeamStatistics({
+    required List<NightShift> allShifts,
+    required List<TeamMember> allTeamMembers,
+    required int year,
+    int? month,
+    double shiftDurationHours = 10.0,
+    TeamSortField sortBy = TeamSortField.nights,
+    bool ascending = false,
+  }) {
+    // Indexation des membres connus par ID exact et par trigramme majuscule.
+    final membersById = <String, TeamMember>{};
+    final membersByTrigramme = <String, TeamMember>{};
+    for (final m in allTeamMembers) {
+      membersById[m.id] = m;
+      if (m.trigramme.isNotEmpty) {
+        membersByTrigramme.putIfAbsent(m.trigramme.toUpperCase(), () => m);
+      }
+    }
+
+    // Regroupement de toutes les gardes (toutes périodes) par agent canonique
+    // afin que les week-ends à cheval (sam. 31 / dim. 1er) soient exacts.
+    final shiftsByAgentKey = <String, List<NightShift>>{};
+    final resolvedMembers = <String, TeamMember>{
+      for (final m in allTeamMembers) m.id: m,
+    };
+
+    for (final shift in allShifts) {
+      final upperTrig = shift.agentTrigramme.trim().toUpperCase();
+      final upperId = shift.agentId.trim().toUpperCase();
+
+      TeamMember? member = membersById[shift.agentId];
+      member ??= upperTrig.isNotEmpty ? membersByTrigramme[upperTrig] : null;
+      member ??= upperId.isNotEmpty ? membersByTrigramme[upperId] : null;
+
+      if (member == null) {
+        final fallbackKey = shift.agentId.isNotEmpty
+            ? shift.agentId
+            : (upperTrig.isNotEmpty ? upperTrig : 'INCONNU');
+        final label = upperTrig.isNotEmpty ? upperTrig : fallbackKey;
+        member = resolvedMembers.putIfAbsent(
+          fallbackKey,
+          () => TeamMember(
+            id: fallbackKey,
+            firstName: label,
+            lastName: '',
+            trigramme: label,
+          ),
+        );
+      } else {
+        resolvedMembers.putIfAbsent(member.id, () => member!);
+      }
+
+      shiftsByAgentKey.putIfAbsent(member.id, () => []).add(shift);
+    }
+
+    final teamCoveredMonths = <int>{};
+    final agentStats = <AgentPeriodStats>[];
+
+    for (final entry in resolvedMembers.entries) {
+      final member = entry.value;
+      final agentAllShifts = shiftsByAgentKey[entry.key] ?? const <NightShift>[];
+
+      final periodShifts = agentAllShifts.where((s) {
+        if (s.date.year != year) return false;
+        if (month != null && s.date.month != month) return false;
+        return true;
+      }).toList();
+
+      final workingShifts = periodShifts.where((s) => s.isWorking).toList();
+      final vacationDays =
+          periodShifts.where((s) => !s.isWorking && s.isVacation).length;
+
+      final totalNights = workingShifts.length;
+      final totalHours = workingShifts.fold<double>(
+        0.0,
+        (total, shift) => total + _shiftHours(shift, shiftDurationHours),
+      );
+
+      final weekendAnalysis = month != null
+          ? analyzeWeekendsMonth(agentAllShifts, year, month)
+          : analyzeWeekendsYear(agentAllShifts, year);
+
+      final weekdayCounts = month != null
+          ? countNightsPerWeekdayMonth(agentAllShifts, year, month)
+          : countNightsPerWeekdayYear(agentAllShifts, year);
+
+      final coveredMonths = <int>{};
+      for (final s in periodShifts) {
+        if (s.isWorking || s.isVacation) {
+          coveredMonths.add(s.date.month);
+          teamCoveredMonths.add(s.date.month);
+        }
+      }
+
+      agentStats.add(
+        AgentPeriodStats(
+          teamMember: member,
+          totalNights: totalNights,
+          totalHours: totalHours,
+          weekendAnalysis: weekendAnalysis,
+          vacationDays: vacationDays,
+          weekdayCounts: weekdayCounts,
+          coveredMonths: coveredMonths,
+        ),
+      );
+    }
+
+    agentStats.sort((a, b) {
+      int cmp;
+      switch (sortBy) {
+        case TeamSortField.nights:
+          cmp = a.totalNights.compareTo(b.totalNights);
+          if (cmp == 0) cmp = a.totalHours.compareTo(b.totalHours);
+          if (cmp == 0) {
+            return a.displayName
+                .toUpperCase()
+                .compareTo(b.displayName.toUpperCase());
+          }
+          return ascending ? cmp : -cmp;
+        case TeamSortField.hours:
+          cmp = a.totalHours.compareTo(b.totalHours);
+          if (cmp == 0) cmp = a.totalNights.compareTo(b.totalNights);
+          if (cmp == 0) {
+            return a.displayName
+                .toUpperCase()
+                .compareTo(b.displayName.toUpperCase());
+          }
+          return ascending ? cmp : -cmp;
+        case TeamSortField.weekends:
+          cmp = a.weekendsWorked.compareTo(b.weekendsWorked);
+          if (cmp == 0) {
+            cmp = a.fullWeekendsWorked.compareTo(b.fullWeekendsWorked);
+          }
+          if (cmp == 0) cmp = a.totalNights.compareTo(b.totalNights);
+          if (cmp == 0) {
+            return a.displayName
+                .toUpperCase()
+                .compareTo(b.displayName.toUpperCase());
+          }
+          return ascending ? cmp : -cmp;
+        case TeamSortField.name:
+          cmp = a.displayName
+              .toUpperCase()
+              .compareTo(b.displayName.toUpperCase());
+          return ascending ? cmp : -cmp;
+      }
+    });
+
+    return TeamPeriodSummary(
+      year: year,
+      month: month,
+      agentStats: agentStats,
+      coveredMonths: teamCoveredMonths,
+    );
+  }
+
+  /// Construit un résumé texte prêt à être copié/partagé (WhatsApp, mail...).
+  static String buildTeamSummaryText(TeamPeriodSummary summary) {
+    const months = [
+      '',
+      'Janvier',
+      'Février',
+      'Mars',
+      'Avril',
+      'Mai',
+      'Juin',
+      'Juillet',
+      'Août',
+      'Septembre',
+      'Octobre',
+      'Novembre',
+      'Décembre',
+    ];
+    final periodLabel = summary.month != null
+        ? '${months[summary.month!]} ${summary.year}'
+        : 'Année ${summary.year} (${summary.coveredMonths.length}/12 mois)';
+
+    final buffer = StringBuffer()
+      ..writeln('Bilan Équipe — $periodLabel')
+      ..writeln();
+
+    for (final stat in summary.agentStats) {
+      final weDetail = stat.halfWeekendsWorked > 0
+          ? '${stat.weekendsWorked} WE (${stat.fullWeekendsWorked} comp., ${stat.halfWeekendsWorked} demi)'
+          : '${stat.weekendsWorked} WE';
+      final caPart = stat.vacationDays > 0 ? ' · ${stat.vacationDays} CA' : '';
+      buffer.writeln(
+        '• ${stat.displayName} : ${stat.totalNights} nuits · $weDetail · ${formatHours(stat.totalHours)}$caPart',
+      );
+    }
+
+    buffer
+      ..writeln()
+      ..write(
+        'Total équipe : ${summary.totalTeamNights} nuits · ${formatHours(summary.totalTeamHours)}',
+      );
+
+    return buffer.toString();
+  }
+}
+
+/// Critères de tri pour le bilan d'équipe.
+enum TeamSortField { nights, weekends, hours, name }
+
+/// Statistiques d'un agent sur un mois ou une année.
+class AgentPeriodStats {
+  final TeamMember teamMember;
+  final int totalNights;
+  final double totalHours;
+  final WeekendAnalysis weekendAnalysis;
+  final int vacationDays;
+  final Map<int, int> weekdayCounts;
+  final Set<int> coveredMonths;
+
+  AgentPeriodStats({
+    required this.teamMember,
+    required this.totalNights,
+    required this.totalHours,
+    required this.weekendAnalysis,
+    this.vacationDays = 0,
+    required this.weekdayCounts,
+    this.coveredMonths = const {},
+  });
+
+  String get displayName {
+    final name = teamMember.displayName.trim();
+    if (name.isNotEmpty) return name;
+    final trig = teamMember.trigramme.trim();
+    return trig.isNotEmpty ? trig : teamMember.id;
+  }
+
+  String get trigramme => teamMember.trigramme;
+
+  /// Nombre total de week-ends travaillés (complets + demi week-ends).
+  int get weekendsWorked =>
+      weekendAnalysis.fullWeekendsWorked + weekendAnalysis.halfWeekendsWorked;
+
+  int get fullWeekendsWorked => weekendAnalysis.fullWeekendsWorked;
+  int get halfWeekendsWorked => weekendAnalysis.halfWeekendsWorked;
+}
+
+/// Bilan global de l'équipe sur un mois ou une année.
+class TeamPeriodSummary {
+  final int year;
+  final int? month;
+  final List<AgentPeriodStats> agentStats;
+  final Set<int> coveredMonths;
+
+  TeamPeriodSummary({
+    required this.year,
+    this.month,
+    required this.agentStats,
+    required this.coveredMonths,
+  });
+
+  int get totalTeamNights =>
+      agentStats.fold<int>(0, (sum, s) => sum + s.totalNights);
+
+  double get totalTeamHours =>
+      agentStats.fold<double>(0.0, (sum, s) => sum + s.totalHours);
+
+  int get activeAgentsCount =>
+      agentStats.where((s) => s.totalNights > 0 || s.vacationDays > 0).length;
+
+  int get maxAgentNights => agentStats.fold<int>(
+        0,
+        (maxVal, s) => s.totalNights > maxVal ? s.totalNights : maxVal,
+      );
 }
 
 /// Weekend analysis result

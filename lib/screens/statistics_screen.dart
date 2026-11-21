@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../models/models.dart';
@@ -18,6 +19,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   int _selectedYear = DateTime.now().year;
   int _selectedMonth = DateTime.now().month;
   StatisticsPeriod _period = StatisticsPeriod.month;
+  StatisticsScope _scope = StatisticsScope.personal;
+  TeamSortField _teamSort = TeamSortField.nights;
+  bool _teamSortAscending = false;
 
   @override
   Widget build(BuildContext context) {
@@ -84,32 +88,48 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                 },
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Bascule Mon bilan / Bilan Équipe
+                      _buildScopeSelector(theme),
+
+                      const SizedBox(height: 16),
+
                       // Period Selector
                       _buildPeriodSelector(theme),
 
                       const SizedBox(height: 24),
 
-                      // Summary Cards
-                      _buildSummaryCards(theme, userShifts, userConfig),
+                      if (_scope == StatisticsScope.personal) ...[
+                        // Summary Cards
+                        _buildSummaryCards(theme, userShifts, userConfig),
 
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
-                      // Weekday Bar Chart
-                      _buildWeekdayChart(theme, userShifts),
+                        // Weekday Bar Chart
+                        _buildWeekdayChart(theme, userShifts),
 
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
-                      // Weekend Analysis
-                      _buildWeekendAnalysis(theme, userShifts),
+                        // Weekend Analysis
+                        _buildWeekendAnalysis(theme, userShifts),
 
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
-                      // Top Teammates
-                      _buildTopTeammates(theme, userShifts, teamMembers, userConfig),
+                        // Top Teammates
+                        _buildTopTeammates(
+                            theme, userShifts, teamMembers, userConfig),
+                      ] else ...[
+                        // Bilan Équipe
+                        _buildTeamOverviewSection(
+                          theme,
+                          allShifts,
+                          teamMembers,
+                          userConfig,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -119,6 +139,26 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         ),
         ),
       ),
+    );
+  }
+
+  Widget _buildScopeSelector(ThemeData theme) {
+    return SegmentedButton<StatisticsScope>(
+      segments: const [
+        ButtonSegment(
+          value: StatisticsScope.personal,
+          label: Text('Mon bilan'),
+          icon: Icon(Icons.person_outline),
+        ),
+        ButtonSegment(
+          value: StatisticsScope.team,
+          label: Text('Bilan Équipe'),
+          icon: Icon(Icons.groups_outlined),
+        ),
+      ],
+      selected: {_scope},
+      onSelectionChanged: (selection) =>
+          setState(() => _scope = selection.first),
     );
   }
 
@@ -208,7 +248,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           child: _buildSummaryCard(
             theme,
             title: 'Heures totales',
-            value: '${totalHours.toStringAsFixed(1)}h',
+            value: StatisticsService.formatHours(totalHours),
             icon: Icons.access_time,
             color: AppColors.shiftEnd,
           ),
@@ -543,8 +583,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         limit: 5,
       );
     } else {
+      final yearShifts =
+          userShifts.where((s) => s.date.year == _selectedYear).toList();
       topTeammates = StatisticsService.getTopTeammates(
-        userShifts,
+        yearShifts,
         userConfig.userId,
         teamMembers,
         limit: 5,
@@ -742,6 +784,699 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     );
   }
 
+  Widget _buildTeamOverviewSection(
+    ThemeData theme,
+    List<NightShift> allShifts,
+    List<TeamMember> teamMembers,
+    UserConfig userConfig,
+  ) {
+    final summary = StatisticsService.getTeamStatistics(
+      allShifts: allShifts,
+      allTeamMembers: teamMembers,
+      year: _selectedYear,
+      month: _period == StatisticsPeriod.month ? _selectedMonth : null,
+      shiftDurationHours: userConfig.shiftDurationHours.toDouble(),
+      sortBy: _teamSort,
+      ascending: _teamSortAscending,
+    );
+
+    if (summary.agentStats.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Icon(
+                Icons.groups_outlined,
+                size: 52,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Aucun membre d\'équipe enregistré',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Importez un planning complet (photo, capture ou PDF) pour calculer le bilan de toute l\'équipe.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final maxNights = summary.maxAgentNights;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Cartes globales équipe
+        Row(
+          children: [
+            Expanded(
+              child: _buildSummaryCard(
+                theme,
+                title: 'Nuits équipe',
+                value: '${summary.totalTeamNights}',
+                icon: Icons.nightlight_round,
+                color: AppColors.shiftEnd,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _buildSummaryCard(
+                theme,
+                title: 'Heures équipe',
+                value: StatisticsService.formatHours(summary.totalTeamHours),
+                icon: Icons.access_time,
+                color: AppColors.neonLime,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // Carte de couverture mensuelle (en mode Année) + bouton Copier
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TechLabel(
+                            _period == StatisticsPeriod.year
+                                ? 'Bilan annuel • ${summary.coveredMonths.length}/12 mois'
+                                : 'Bilan mensuel • ${summary.activeAgentsCount}/${summary.agentStats.length} actifs',
+                            size: 9.5,
+                            color: theme.colorScheme.onSurface,
+                            letterSpacing: 1.4,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Touchez un membre pour voir son détail',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _copyTeamSummary(summary),
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text('Copier'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_period == StatisticsPeriod.year) ...[
+                  const SizedBox(height: 14),
+                  _buildMonthCoverageStrip(theme, summary.coveredMonths),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Barre de tri
+        _buildTeamSortBar(theme),
+
+        const SizedBox(height: 12),
+
+        // Liste des membres de l'équipe
+        ...summary.agentStats.asMap().entries.map((entry) {
+          final rank = entry.key;
+          final stat = entry.value;
+          final isCurrentUser =
+              stat.teamMember.id == userConfig.userId ||
+                  (userConfig.userTrigramme.isNotEmpty &&
+                      stat.trigramme.toUpperCase() ==
+                          userConfig.userTrigramme.toUpperCase());
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _buildAgentBilanCard(
+              theme: theme,
+              rank: rank,
+              stat: stat,
+              maxNights: maxNights,
+              isCurrentUser: isCurrentUser,
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildMonthCoverageStrip(ThemeData theme, Set<int> coveredMonths) {
+    const labels = [
+      'J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'
+    ];
+    return Row(
+      children: List.generate(12, (index) {
+        final monthNum = index + 1;
+        final covered = coveredMonths.contains(monthNum);
+        return Expanded(
+          child: Container(
+            margin: EdgeInsets.only(right: index < 11 ? 4 : 0),
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: covered
+                  ? theme.colorScheme.primary.withValues(alpha: 0.16)
+                  : theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: covered
+                    ? theme.colorScheme.primary.withValues(alpha: 0.6)
+                    : theme.colorScheme.outline.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Text(
+              labels[index],
+              style: AppFonts.tag(
+                size: 8.5,
+                color: covered
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildTeamSortBar(ThemeData theme) {
+    Widget buildChip(TeamSortField field, String label) {
+      final selected = _teamSort == field;
+      return ChoiceChip(
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label),
+            if (selected) ...[
+              const SizedBox(width: 4),
+              Icon(
+                _teamSortAscending
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
+                size: 13,
+              ),
+            ],
+          ],
+        ),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            if (_teamSort == field) {
+              _teamSortAscending = !_teamSortAscending;
+            } else {
+              _teamSort = field;
+              _teamSortAscending = field == TeamSortField.name;
+            }
+          });
+        },
+        visualDensity: VisualDensity.compact,
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          TechLabel(
+            'Trier :',
+            size: 8.5,
+            color: theme.colorScheme.onSurfaceVariant,
+            letterSpacing: 1.2,
+          ),
+          const SizedBox(width: 8),
+          buildChip(TeamSortField.nights, 'Nuits'),
+          const SizedBox(width: 6),
+          buildChip(TeamSortField.weekends, 'Week-ends'),
+          const SizedBox(width: 6),
+          buildChip(TeamSortField.hours, 'Heures'),
+          const SizedBox(width: 6),
+          buildChip(TeamSortField.name, 'Nom'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgentBilanCard({
+    required ThemeData theme,
+    required int rank,
+    required AgentPeriodStats stat,
+    required int maxNights,
+    required bool isCurrentUser,
+  }) {
+    final accent = isCurrentUser
+        ? theme.colorScheme.primary
+        : _getMedalColor(rank);
+    final ratio = maxNights > 0 ? (stat.totalNights / maxNights).clamp(0.0, 1.0) : 0.0;
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        side: BorderSide(
+          color: isCurrentUser
+              ? theme.colorScheme.primary.withValues(alpha: 0.7)
+              : theme.colorScheme.outline.withValues(alpha: 0.25),
+          width: isCurrentUser ? 1.4 : 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        onTap: () => _showAgentDetailSheet(theme, stat, isCurrentUser),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: Text(
+                      _getMedal(rank),
+                      style: AppFonts.monoText(
+                        size: 11,
+                        weight: FontWeight.w800,
+                        color: accent,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            stat.displayName,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (isCurrentUser) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: theme.colorScheme.primary
+                                    .withValues(alpha: 0.6),
+                              ),
+                            ),
+                            child: Text(
+                              'MOI',
+                              style: AppFonts.tag(
+                                size: 8,
+                                color: theme.colorScheme.primary,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (stat.vacationDays > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.vacationEnd.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        border: Border.all(
+                          color: AppColors.vacationEnd.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Text(
+                        '${stat.vacationDays} CA',
+                        style: AppFonts.tag(
+                          size: 8,
+                          color: AppColors.vacationEnd,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildAgentMetricColumn(
+                      theme: theme,
+                      value: '${stat.totalNights}',
+                      label: stat.totalNights > 1 ? 'NUITS' : 'NUIT',
+                      color: AppColors.shiftEnd,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildAgentMetricColumn(
+                      theme: theme,
+                      value: '${stat.weekendsWorked}',
+                      label: stat.halfWeekendsWorked > 0
+                          ? 'WE (${stat.fullWeekendsWorked}c·${stat.halfWeekendsWorked}½)'
+                          : 'WEEK-ENDS',
+                      color: AppColors.nightTertiary,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildAgentMetricColumn(
+                      theme: theme,
+                      value: StatisticsService.formatHours(stat.totalHours),
+                      label: 'HEURES',
+                      color: AppColors.neonLime,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: ratio,
+                  minHeight: 4,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  valueColor: AlwaysStoppedAnimation<Color>(accent),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgentMetricColumn({
+    required ThemeData theme,
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            style: AppFonts.monoText(
+              size: 18,
+              weight: FontWeight.w800,
+              color: color,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppFonts.tag(
+            size: 7.5,
+            color: theme.colorScheme.onSurfaceVariant,
+            letterSpacing: 0.6,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _copyTeamSummary(TeamPeriodSummary summary) async {
+    final text = StatisticsService.buildTeamSummaryText(summary);
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.success,
+        content: const Text(
+          'Bilan équipe copié dans le presse-papiers !',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  void _showAgentDetailSheet(
+    ThemeData theme,
+    AgentPeriodStats stat,
+    bool isCurrentUser,
+  ) {
+    final periodTitle = _period == StatisticsPeriod.month
+        ? '${_getMonthName(_selectedMonth)} $_selectedYear'
+        : 'Année $_selectedYear';
+    const weekdays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              stat.displayName,
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              periodTitle +
+                                  (isCurrentUser ? ' • Votre profil' : ''),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildWeekendStatCard(
+                          theme,
+                          'Nuits',
+                          '${stat.totalNights}',
+                          Icons.nightlight_round,
+                          AppColors.shiftEnd,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildWeekendStatCard(
+                          theme,
+                          'Heures',
+                          StatisticsService.formatHours(stat.totalHours),
+                          Icons.access_time,
+                          AppColors.neonLime,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildWeekendStatCard(
+                          theme,
+                          'Congés',
+                          '${stat.vacationDays}',
+                          Icons.beach_access,
+                          AppColors.vacationEnd,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  TechLabel(
+                    'Week-ends ($periodTitle)',
+                    size: 9,
+                    color: theme.colorScheme.onSurface,
+                    letterSpacing: 1.5,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildWeekendStatCard(
+                          theme,
+                          'Complets',
+                          '${stat.weekendAnalysis.fullWeekendsWorked}',
+                          Icons.weekend,
+                          AppColors.success,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildWeekendStatCard(
+                          theme,
+                          'Demi WE',
+                          '${stat.weekendAnalysis.halfWeekendsWorked}',
+                          Icons.nights_stay,
+                          AppColors.nightTertiary,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildWeekendStatCard(
+                          theme,
+                          'Repos WE',
+                          '${stat.weekendAnalysis.fullWeekendsRest}',
+                          Icons.spa_outlined,
+                          theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  TechLabel(
+                    'Répartition par jour',
+                    size: 9,
+                    color: theme.colorScheme.onSurface,
+                    letterSpacing: 1.5,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: List.generate(7, (i) {
+                      final count = stat.weekdayCounts[i + 1] ?? 0;
+                      final isWe = i >= 5;
+                      return Expanded(
+                        child: Container(
+                          margin: EdgeInsets.only(right: i < 6 ? 6 : 0),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: (isWe
+                                    ? AppColors.nightTertiary
+                                    : theme.colorScheme.primary)
+                                .withValues(alpha: count > 0 ? 0.14 : 0.04),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: (isWe
+                                      ? AppColors.nightTertiary
+                                      : theme.colorScheme.primary)
+                                  .withValues(alpha: count > 0 ? 0.45 : 0.15),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '$count',
+                                style: AppFonts.monoText(
+                                  size: 14,
+                                  weight: FontWeight.w800,
+                                  color: count > 0
+                                      ? (isWe
+                                          ? AppColors.nightTertiary
+                                          : theme.colorScheme.primary)
+                                      : theme.colorScheme.onSurfaceVariant,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                weekdays[i].toUpperCase(),
+                                style: AppFonts.tag(
+                                  size: 7.5,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                  if (_period == StatisticsPeriod.year) ...[
+                    const SizedBox(height: 18),
+                    TechLabel(
+                      'Mois renseignés (${stat.coveredMonths.length}/12)',
+                      size: 9,
+                      color: theme.colorScheme.onSurface,
+                      letterSpacing: 1.5,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildMonthCoverageStrip(theme, stat.coveredMonths),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _goToPreviousPeriod() {
     setState(() {
       if (_period == StatisticsPeriod.month) {
@@ -782,3 +1517,5 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 }
 
 enum StatisticsPeriod { month, year }
+
+enum StatisticsScope { personal, team }
